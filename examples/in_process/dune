@@ -1,0 +1,9 @@
+(library
+ (name in_process)
+ (modules in_process)
+ (libraries ocapi yojson))
+
+(test
+ (name in_process_test)
+ (modules in_process_test)
+ (libraries ocapi in_process alcotest yojson))

@@ -1,0 +1,9 @@
+(library
+ (name bearer_auth)
+ (modules bearer_auth)
+ (libraries ocapi))
+
+(test
+ (name bearer_auth_test)
+ (modules bearer_auth_test)
+ (libraries ocapi bearer_auth alcotest yojson))

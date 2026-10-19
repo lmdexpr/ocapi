@@ -1,0 +1,67 @@
+; The contract, the server and the client are separate libraries: the server and the client share
+; [items_api] and nothing else.
+
+(library
+ (name items_api)
+ (modules items_api)
+ (libraries ocapi yojson))
+
+(library
+ (name items_server)
+ (modules items_server)
+ (libraries ocapi items_api))
+
+(library
+ (name items_client)
+ (modules items_client)
+ (libraries ocapi items_api yojson))
+
+(executable
+ (name server_main)
+ (modules server_main)
+ (libraries ocapi ocapi-cohttp-eio items_server eio_main))
+
+(executable
+ (name client_main)
+ (modules client_main)
+ (libraries
+  ocapi
+  ocapi-cohttp-eio
+  items_api
+  items_client
+  cohttp-eio
+  eio_main
+  uri))
+
+(test
+ (name items_test)
+ (modules items_test)
+ (libraries
+  ocapi
+  ocapi-cohttp-eio
+  items_api
+  items_server
+  items_client
+  alcotest
+  cohttp-eio
+  eio
+  eio_main
+  uri))
+
+(executable
+ (name openapi_main)
+ (modules openapi_main)
+ (libraries ocapi ocapi-cohttp-eio items_api yojson))
+
+; The document is checked in; [dune test] fails when the endpoints change it, [dune promote]
+; accepts the change.
+
+(rule
+ (with-stdout-to
+  openapi.actual.json
+  (run ./openapi_main.exe)))
+
+(rule
+ (alias runtest)
+ (action
+  (diff openapi.json openapi.actual.json)))

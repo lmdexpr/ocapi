@@ -1,0 +1,37 @@
+(version 0.5.1)
+
+(build
+ (all_platforms
+  ((action
+    (progn
+     (when %{pkg-self:dev} (run dune subst))
+     (run dune build -p %{pkg-self:name} -j %{jobs} @install))))))
+
+(depends
+ (all_platforms
+  (dune
+   ocaml
+   reason
+   melange
+   uucp
+   ppxlib
+   quickjs
+   lwt
+   lwt_ppx
+   uri
+   yojson
+   integers
+   zarith
+   uutf
+   melange-fetch
+   melange-json
+   melange-json-native
+   melange-webapi
+   reason-react)))
+
+(source
+ (fetch
+  (url
+   https://github.com/ml-in-barcelona/server-reason-react/releases/download/0.5.1/server-reason-react-0.5.1.tbz)
+  (checksum
+   sha512=24a52537c091c4b278ea5e468aa6786378f8b559ed2128e824b6f84f26c283856a30e7ef01aab6101087bd53b9bdc2ecd8152c00db10bccff67221b9c67318a0)))

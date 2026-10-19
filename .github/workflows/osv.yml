@@ -1,0 +1,29 @@
+name: OSV
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'dune.lock/**', '.github/workflows/osv.yml' ]
+  pull_request:
+    paths: [ 'dune.lock/**', '.github/workflows/osv.yml' ]
+  schedule:
+    # New advisories land without any change on our side, so rescan daily.
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  osv:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # only for create-issue on schedule
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: lmdexpr/dune-lock-osv@main
+        with:
+          create-issue: ${{ github.event_name == 'schedule' }}

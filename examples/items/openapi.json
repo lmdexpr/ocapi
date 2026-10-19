@@ -1,0 +1,142 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Items", "version": "1.0.0" },
+  "paths": {
+    "/items": {
+      "get": {
+        "tags": [ "Item" ],
+        "summary": "Items",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "At most this many items",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The items",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Items" }
+              }
+            }
+          },
+          "400": {
+            "description": "limit is not between 1 and 100",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": { "description": "Internal error" }
+        }
+      },
+      "post": {
+        "tags": [ "Item" ],
+        "summary": "Create an item",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewItem" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created item",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Item" }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not {\"name\": string}",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "413": { "description": "The request body is too large" },
+          "500": { "description": "Internal error" }
+        }
+      }
+    },
+    "/items/{id}": {
+      "get": {
+        "tags": [ "Item" ],
+        "summary": "One item",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Item id",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Item" }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is framed ambiguously (a body on GET, conflicting lengths)"
+          },
+          "404": {
+            "description": "No such item",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": { "description": "Internal error" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "string" } },
+        "required": [ "error" ]
+      },
+      "Items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" }
+          },
+          "required": [ "id", "name" ]
+        }
+      },
+      "Item": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" }
+        },
+        "required": [ "id", "name" ]
+      },
+      "NewItem": {
+        "type": "object",
+        "properties": { "name": { "type": "string" } },
+        "required": [ "name" ]
+      }
+    }
+  }
+}

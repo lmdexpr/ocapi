@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # dune.lock is solved for linux and macos only
+        runs-on: [ ubuntu-latest, macos-latest ]
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ocaml-dune/setup-dune@v2.1.0
+        with:
+          # Keep in sync with the local dune; nightly would make dune.lock churn
+          version: 3.24.2
+      - run: dune build
+      - run: dune test
+      # Run here rather than in a separate job: @fmt needs the locked compiler
+      # this job already built, and a second job would race on the same cache key.
+      - name: Check formatting
+        if: runner.os == 'Linux'
+        run: |
+          dune tools install ocamlformat
+          eval "$(dune tools env)"
+          dune build @fmt

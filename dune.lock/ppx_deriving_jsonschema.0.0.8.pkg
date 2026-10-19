@@ -1,0 +1,19 @@
+(version 0.0.8)
+
+(build
+ (all_platforms
+  ((action
+    (progn
+     (when %{pkg-self:dev} (run dune subst))
+     (run dune build -p %{pkg-self:name} -j %{jobs} @install))))))
+
+(depends
+ (all_platforms
+  (ocaml dune ppxlib melange server-reason-react)))
+
+(source
+ (fetch
+  (url
+   https://github.com/ahrefs/ppx_deriving_jsonschema/releases/download/0.0.8/ppx_deriving_jsonschema-0.0.8.tbz)
+  (checksum
+   sha512=c0e661717244bf62132a21ef975db2720597b1d8013b0221c1d7db5adfc14928caf675c0f2fd89869ee6f4f96527599e556a0c123cd9dc7f65cad8f81de322ef)))

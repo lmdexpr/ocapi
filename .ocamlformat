@@ -1,0 +1,7 @@
+version = 0.29.0
+margin = 100
+parse-docstrings = false
+if-then-else = fit-or-vertical
+parens-tuple = multi-line-only
+cases-exp-indent = 2
+max-indent = 2

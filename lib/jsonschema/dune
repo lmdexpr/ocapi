@@ -1,0 +1,19 @@
+(library
+ (name ocapi_jsonschema)
+ (public_name ocapi-jsonschema)
+ (modules ocapi_jsonschema)
+ (libraries ocapi yojson ppx_deriving_jsonschema.runtime))
+
+(test
+ (name ocapi_jsonschema_test)
+ (package ocapi-jsonschema)
+ (modules ocapi_jsonschema_test)
+ (preprocess
+  (pps ppx_deriving_jsonschema))
+ (libraries
+  ocapi
+  ocapi-jsonschema
+  ppx_deriving_jsonschema.runtime
+  alcotest
+  str
+  yojson))

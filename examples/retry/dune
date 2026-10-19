@@ -1,0 +1,9 @@
+(library
+ (name retry)
+ (modules retry)
+ (libraries ocapi eio))
+
+(test
+ (name retry_test)
+ (modules retry_test)
+ (libraries ocapi retry alcotest eio eio_main))

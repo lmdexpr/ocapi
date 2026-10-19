@@ -1,0 +1,20 @@
+(library
+ (name ocapi_cohttp_eio)
+ (public_name ocapi-cohttp-eio)
+ (modules server client)
+ (libraries ocapi eio cstruct http cohttp-eio uri yojson))
+
+(tests
+ (names server_test client_test)
+ (package ocapi-cohttp-eio)
+ (modules server_test client_test)
+ (libraries
+  ocapi
+  ocapi-cohttp-eio
+  alcotest
+  eio
+  eio_main
+  http
+  cohttp-eio
+  uri
+  yojson))

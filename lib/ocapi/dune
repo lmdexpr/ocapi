@@ -1,0 +1,11 @@
+(library
+ (name ocapi)
+ (public_name ocapi)
+ (modules endpoint server client)
+ (libraries yojson))
+
+(tests
+ (names endpoint_test server_test client_test)
+ (package ocapi)
+ (modules endpoint_test server_test client_test)
+ (libraries ocapi alcotest yojson))
