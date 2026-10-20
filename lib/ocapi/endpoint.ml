@@ -389,14 +389,15 @@ end
 module Response = struct
   type content = No_content | Schema of string * Yojson.Safe.t
 
-  type 'r case = {
-    status : int;
-    description : string;
+  type 'r produced = {
     content : content;
     select : 'r -> ((string * string) list * Reply.body) option;
     decode : (string * string) list -> string -> ('r, string) result option;
     documented_headers : (string * string) list;
   }
+
+  type 'r origin = Produced of 'r produced | Outside
+  type 'r case = { status : int; description : string; origin : 'r origin }
 
   (* The caller's decoder; which exceptions it raises cannot be known here. *)
   let decoded of_json body =
@@ -408,22 +409,31 @@ module Response = struct
     {
       status;
       description;
-      content = No_content;
-      select = (fun r -> prism.project r |> Option.map @@ fun () -> [], Reply.Empty);
-      (* Only an empty body: a case of the same status with a body must get the chance to
-         decode it. *)
-      documented_headers = [];
-      decode = (fun _ body -> if body = "" then Some (Ok (prism.inject ())) else None);
+      origin =
+        Produced
+          {
+            content = No_content;
+            select = (fun r -> prism.project r |> Option.map @@ fun () -> [], Reply.Empty);
+            (* Only an empty body: a case of the same status with a body must get the chance
+               to decode it. *)
+            documented_headers = [];
+            decode = (fun _ body -> if body = "" then Some (Ok (prism.inject ())) else None);
+          };
     }
 
   let json ~status ~description (codec : _ Codec.t) (prism : _ Prism.t) =
     {
       status;
       description;
-      content = Schema (codec.name, codec.schema);
-      select = (fun r -> prism.project r |> Option.map @@ fun a -> [], Reply.Json (codec.to_json a));
-      documented_headers = [];
-      decode = (fun _ body -> Some (decoded codec.of_json body |> Result.map prism.inject));
+      origin =
+        Produced
+          {
+            content = Schema (codec.name, codec.schema);
+            select =
+              (fun r -> prism.project r |> Option.map @@ fun a -> [], Reply.Json (codec.to_json a));
+            documented_headers = [];
+            decode = (fun _ body -> Some (decoded codec.of_json body |> Result.map prism.inject));
+          };
     }
 
   let json_with_headers ~status ~description ?(headers = []) (codec : _ Codec.t) (prism : _ Prism.t)
@@ -431,46 +441,52 @@ module Response = struct
     {
       status;
       description;
-      content = Schema (codec.name, codec.schema);
-      select =
-        (fun r ->
-          prism.project r |> Option.map @@ fun (sent, a) -> sent, Reply.Json (codec.to_json a));
-      decode =
-        (fun received body ->
-          Some (decoded codec.of_json body |> Result.map @@ fun a -> prism.inject (received, a)));
-      documented_headers = headers;
+      origin =
+        Produced
+          {
+            content = Schema (codec.name, codec.schema);
+            select =
+              (fun r ->
+                prism.project r |> Option.map @@ fun (sent, a) -> sent, Reply.Json (codec.to_json a));
+            decode =
+              (fun received body ->
+                Some
+                  (decoded codec.of_json body |> Result.map @@ fun a -> prism.inject (received, a)));
+            documented_headers = headers;
+          };
     }
 
   let unspecified_json ~status ~description (prism : _ Prism.t) =
     {
       status;
       description;
-      content = No_content;
-      select = (fun r -> prism.project r |> Option.map @@ fun j -> [], Reply.Json j);
-      documented_headers = [];
-      decode = (fun _ body -> Some (decoded Fun.id body |> Result.map prism.inject));
+      origin =
+        Produced
+          {
+            content = No_content;
+            select = (fun r -> prism.project r |> Option.map @@ fun j -> [], Reply.Json j);
+            documented_headers = [];
+            decode = (fun _ body -> Some (decoded Fun.id body |> Result.map prism.inject));
+          };
     }
 
   let raw ~status ~description (prism : _ Prism.t) =
     {
       status;
       description;
-      content = No_content;
-      select =
-        (fun r -> prism.project r |> Option.map @@ fun (headers, body) -> headers, Reply.Raw body);
-      documented_headers = [];
-      decode = (fun headers body -> Some (Ok (prism.inject (headers, body))));
+      origin =
+        Produced
+          {
+            content = No_content;
+            select =
+              (fun r ->
+                prism.project r |> Option.map @@ fun (headers, body) -> headers, Reply.Raw body);
+            documented_headers = [];
+            decode = (fun headers body -> Some (Ok (prism.inject (headers, body))));
+          };
     }
 
-  let elsewhere ~status ~description =
-    {
-      status;
-      description;
-      content = No_content;
-      select = (fun _ -> None);
-      documented_headers = [];
-      decode = (fun _ _ -> None);
-    }
+  let outside ~status ~description = { status; description; origin = Outside }
 
   let errors ?(without_body = []) (codec : _ Codec.t) ~status (prism : _ Prism.t) documented =
     documented
@@ -482,24 +498,33 @@ module Response = struct
          {
            status = code;
            description;
-           content = No_content;
-           select = (fun r -> select r |> Option.map @@ fun _ -> [], Reply.Empty);
-           documented_headers = [];
-           decode = (fun _ _ -> None);
+           origin =
+             Produced
+               {
+                 content = No_content;
+                 select = (fun r -> select r |> Option.map @@ fun _ -> [], Reply.Empty);
+                 documented_headers = [];
+                 decode = (fun _ _ -> None);
+               };
          }
        else
          {
            status = code;
            description;
-           content = Schema (codec.name, codec.schema);
-           select = (fun r -> select r |> Option.map @@ fun e -> [], Reply.Json (codec.to_json e));
-           documented_headers = [];
-           decode =
-             (fun _ body ->
-               match decoded codec.of_json body with
-               | Ok e when status e = code -> Some (Ok (prism.inject e))
-               | Ok _ -> None
-               | Error _ as malformed -> Some malformed);
+           origin =
+             Produced
+               {
+                 content = Schema (codec.name, codec.schema);
+                 select =
+                   (fun r -> select r |> Option.map @@ fun e -> [], Reply.Json (codec.to_json e));
+                 documented_headers = [];
+                 decode =
+                   (fun _ body ->
+                     match decoded codec.of_json body with
+                     | Ok e when status e = code -> Some (Ok (prism.inject e))
+                     | Ok _ -> None
+                     | Error _ as malformed -> Some malformed);
+               };
          }
 end
 
@@ -576,7 +601,11 @@ let reply t r =
   match
     t.responses
     |> List.find_map @@ fun (c : _ Response.case) ->
-       c.select r |> Option.map @@ fun (headers, body) -> Reply.{ status = c.status; headers; body }
+       match c.origin with
+       | Produced p ->
+         p.select r
+         |> Option.map @@ fun (headers, body) -> Reply.{ status = c.status; headers; body }
+       | Outside -> None
   with
   | Some reply -> with_headers t reply
   | None -> failwith ("no response case matches the result of " ^ t.template)
@@ -591,7 +620,9 @@ let decode t ~status ~headers body =
   in
   t.responses
   |> List.filter_map (fun (c : _ Response.case) ->
-    if c.status = status then c.decode headers body else None)
+    match c.origin with
+    | Produced p when c.status = status -> p.decode headers body
+    | Produced _ | Outside -> None)
   |> first
 
 module Openapi = struct
@@ -643,11 +674,17 @@ module Openapi = struct
     in
     List.sort (fun a b -> compare (position a) (position b)) path @ query |> List.map parameter
 
-  let headers_of ?(cases = []) endpoint =
+  let headers_of ~endpoint_headers ?(cases = []) endpoint =
     match
-      (endpoint.headers
-      |> List.filter_map (fun (h : header) -> Option.map (fun d -> h.name, d) h.description))
-      @ List.concat_map (fun (c : _ Response.case) -> c.documented_headers) cases
+      (if endpoint_headers then
+         endpoint.headers
+         |> List.filter_map (fun (h : header) -> Option.map (fun d -> h.name, d) h.description)
+       else
+         [])
+      @ List.concat_map
+          (fun (c : _ Response.case) ->
+            match c.origin with Produced p -> p.documented_headers | Outside -> [])
+          cases
       |> List.fold_left
            (fun acc (name, d) -> if List.mem_assoc name acc then acc else acc @ [ name, d ])
            []
@@ -709,7 +746,7 @@ module Openapi = struct
       ( status,
         ( string_of_int status,
           `Assoc
-            ((("description", `String description) :: (if headers then headers_of endpoint else []))
+            ((("description", `String description) :: headers_of ~endpoint_headers:headers endpoint)
             @ content) ) )
     in
     (* Several cases with one status: the description of the first, the schemas as a oneOf in
@@ -721,7 +758,9 @@ module Openapi = struct
       let schemas =
         cases
         |> List.filter_map (fun (c : _ Response.case) ->
-          match c.content with Schema (name, _) -> Some (schema_ref name) | No_content -> None)
+          match c.origin with
+          | Produced { content = Schema (name, _); _ } -> Some (schema_ref name)
+          | Produced { content = No_content; _ } | Outside -> None)
         |> List.fold_left (fun acc s -> if List.mem s acc then acc else acc @ [ s ]) []
       in
       let content =
@@ -730,7 +769,14 @@ module Openapi = struct
         | [ schema ] -> [ "content", content schema ]
         | schemas -> [ "content", content (`Assoc [ "oneOf", `List schemas ]) ]
       in
-      let rest = headers_of ~cases endpoint @ content in
+      (* The endpoint headers go out through [reply] and [resolve] only: a status that only
+         [outside] cases declare never carries them. *)
+      let endpoint_headers =
+        List.exists
+          (fun (c : _ Response.case) -> match c.origin with Produced _ -> true | Outside -> false)
+          cases
+      in
+      let rest = headers_of ~endpoint_headers ~cases endpoint @ content in
       let description = (List.hd cases).description in
       status, (string_of_int status, `Assoc (("description", `String description) :: rest))
     in
@@ -807,7 +853,9 @@ module Openapi = struct
       @ List.map snd e.provide.rejections
       @ List.filter_map
           (fun (c : _ Response.case) ->
-            match c.content with Schema (name, schema) -> Some (name, schema) | No_content -> None)
+            match c.origin with
+            | Produced { content = Schema (name, schema); _ } -> Some (name, schema)
+            | Produced { content = No_content; _ } | Outside -> None)
           e.responses)
     |> List.fold_left add []
 
