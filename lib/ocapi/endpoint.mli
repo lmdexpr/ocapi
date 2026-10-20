@@ -119,6 +119,11 @@ module Provide : sig
   val return : 'a -> ('q, 'a, 's, 's) t
   val map : ('a -> 'b) -> ('q, 'a, 'i, 'o) t -> ('q, 'b, 'i, 'o) t
 
+  val contramap : ('q2 -> 'q1) -> ('q1, 'a, 'i, 'o) t -> ('q2, 'a, 'i, 'o) t
+  (** The provider for a part of a larger request: the client writes what [f] takes out of the
+      request, the server reads as before. A provider shared by several endpoints is written once
+      against its own type, e.g. [Provide.contramap (fun r -> r.page) paging]. *)
+
   val both : ('q, 'a, 'i, 'm) t -> ('q, 'b, 'm, 'o) t -> ('q, 'a * 'b, 'i, 'o) t
   (** Resolves left to right and answers with the reply of the first provider that fails. The
       client sends what both encode. *)

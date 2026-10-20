@@ -115,6 +115,7 @@ module Provide = struct
 
   let return a = make (fun _ -> Ok a)
   let map f t = { t with resolve = (fun request -> t.resolve request |> Result.map f) }
+  let contramap f t = { t with encode = (fun q -> t.encode (f q)) }
 
   let both a b =
     {
