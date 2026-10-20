@@ -73,7 +73,7 @@ let get =
                Yojson.Safe.Util.to_string)
             Ocapi.Endpoint.Prism.ok;
           json ~status:404 ~description:"missing" error Ocapi.Endpoint.Prism.error;
-          elsewhere ~status:500 ~description:"internal";
+          outside ~status:500 ~description:"internal";
         ]
 
 (* Answers [Send] with [status] and [body], recording the request. *)
@@ -104,7 +104,7 @@ let test_call_decodes_with_the_cases () =
   check "ok" "item x" 200 {|"x"|};
   check "a declared error" "error gone" 404 {|{"error":"gone"}|};
   check "401 without a case" "unauthorized" 401 "";
-  check "a status documented elsewhere" "undeclared 500" 500 "";
+  check "a status from outside the endpoint" "undeclared 500" 500 "";
   check "an undocumented status" "undeclared 418" 418 "";
   check "a body the codec rejects" "malformed 200" 200 "{"
 

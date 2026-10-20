@@ -180,7 +180,7 @@ let test_openapi_operation () =
       ~responses:
         Ocapi.Endpoint.Response.
           [
-            elsewhere ~status:500 ~description:"internal";
+            outside ~status:500 ~description:"internal";
             echo;
             json ~status:200 ~description:"ignored" other Ocapi.Endpoint.Prism.id;
           ]
@@ -193,8 +193,7 @@ let test_openapi_operation () =
    ^ {|{"name":"q","in":"query","required":true,"description":"q","schema":{"type":"string"}}],|}
    ^ {|"responses":{"200":{"description":"echo","headers":{"Cache-Control":{"description":"d","schema":{"type":"string"}}},|}
    ^ {|"content":{"application/json":{"schema":{"oneOf":[{"$ref":"#/components/schemas/Echo"},{"$ref":"#/components/schemas/OtherThing"}]}}}},|}
-   ^ {|"500":{"description":"internal","headers":{"Cache-Control":{"description":"d","schema":{"type":"string"}}}}}}|}
-    )
+   ^ {|"500":{"description":"internal"}}}|})
     (Yojson.Safe.to_string (Ocapi.Endpoint.Openapi.operation documented))
 
 let test_openapi_paths () =
@@ -284,6 +283,22 @@ let test_responses_from_providers_and_transport () =
       "500", "internal", false;
     ]
     (statuses (endpoint ~headers "/a" rejecting [ echo ]));
+  Alcotest.(check (list (triple string string bool)))
+    "from outside the endpoint"
+    [
+      "200", "echo", true;
+      "400", "provider 400", true;
+      "422", "provider 422", true;
+      "500", "outside", false;
+    ]
+    (statuses
+       (endpoint ~headers "/a" rejecting
+          Ocapi.Endpoint.Response.
+            [
+              echo;
+              outside ~status:200 ~description:"outside";
+              outside ~status:500 ~description:"outside";
+            ]));
   let with_body =
     let+ _ = rejecting
     and+ body =

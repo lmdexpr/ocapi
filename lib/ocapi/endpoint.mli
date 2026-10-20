@@ -315,9 +315,11 @@ module Response : sig
     status:int -> description:string -> ('r, (string * string) list * string) Prism.t -> 'r case
   (** The handler decides the headers and the body (a download, say). No content is documented. *)
 
-  val elsewhere : status:int -> description:string -> 'r case
-  (** Documents a response that is produced elsewhere (by a provider, the router or the
-      adapter). The client cannot decode it. *)
+  val outside : status:int -> description:string -> 'r case
+  (** Documents a response that does not go through the endpoint (one from the router, the
+      adapter or the application's catch-all); a provider declares its own replies in
+      [responses]. The client cannot decode it. A status declared only by such cases is
+      documented without the endpoint headers. *)
 
   val errors :
     ?without_body:int list ->
