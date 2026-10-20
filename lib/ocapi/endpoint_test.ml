@@ -603,6 +603,41 @@ let test_cookie_parameters () =
     "a value a cookie cannot hold is not encoded" true
     (Result.is_error (encode e { session = "a b"; theme = None }))
 
+type page = { offset : int; size : int }
+type search = { text : string; page : page }
+
+(* A provider written once against its own record, used as a part of a larger one. *)
+let test_contramap () =
+  let open Ocapi.Endpoint in
+  let paging =
+    let+ offset =
+      Query.required ~description:"" (Value.int ()) "offset" (fun p -> p.offset)
+      |> Provide.require (fun _ -> Reply.empty 400)
+    and+ size =
+      Query.required ~description:"" (Value.int ()) "size" (fun p -> p.size)
+      |> Provide.require (fun _ -> Reply.empty 400)
+    in
+    { offset; size }
+  in
+  let search =
+    make ~meth:`GET "/search" ~tags:[] ~summary:"s"
+      (let+ text =
+         Query.required ~description:"" Value.string "q" (fun r -> r.text)
+         |> Provide.require (fun _ -> Reply.empty 400)
+       and+ page = Provide.contramap (fun r -> r.page) paging in
+       { text; page })
+      ~responses:[ echo ]
+  in
+  let q = { text = "ocaml"; page = { offset = 20; size = 10 } } in
+  let encoded = encode search q |> Result.get_ok in
+  Alcotest.(check (list (pair string (list string))))
+    "written"
+    [ "q", [ "ocaml" ]; "offset", [ "20" ]; "size", [ "10" ] ]
+    encoded.query;
+  Alcotest.(check bool)
+    "read back" true
+    (resolve search (request ~query:encoded.query "/search") = Ok q)
+
 let test_bool () =
   let parse s =
     Ocapi.Endpoint.Provide.resolve
@@ -700,6 +735,7 @@ let () =
           Alcotest.test_case "a raw body has its content type" `Quick
             test_a_raw_body_has_its_content_type;
           Alcotest.test_case "bool" `Quick test_bool;
+          Alcotest.test_case "contramap" `Quick test_contramap;
           Alcotest.test_case "json with headers" `Quick test_json_with_headers;
           Alcotest.test_case "cookie parameters" `Quick test_cookie_parameters;
           Alcotest.test_case "a json rejection is documented" `Quick
