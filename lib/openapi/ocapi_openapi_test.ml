@@ -287,8 +287,10 @@ let test_optional_documentation () =
   Alcotest.(check string)
     "operation"
     ({|{"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],|}
-   ^ {|"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"string"}}}},|}
-   ^ {|"404":{"description":"Not Found"},"599":{"description":"Status 599"}}}|})
+   ^ {|"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"string"}}},|}
+   ^ {|"x-ocapi-cases":[{"constructor":"Ok","schema":{"type":"string"}}]},|}
+   ^ {|"404":{"description":"Not Found","x-ocapi-cases":[{"constructor":"Error"}]},"599":{"description":"Status 599"}}}|}
+    )
     (Yojson.Safe.to_string (Ocapi_openapi.operation e));
   Alcotest.(check (list string)) "no components" [] (Ocapi_openapi.schemas [ e ] |> List.map fst)
 
@@ -369,17 +371,107 @@ let test_json_with_headers () =
     |> Yojson.Safe.Util.(fun o -> member "responses" o |> member "200" |> member "headers")
     |> Yojson.Safe.to_string)
 
+let named name =
+  Ocapi.Endpoint.Codec.make ~name ~schema:string_schema
+    (fun s -> `String s)
+    Yojson.Safe.Util.to_string
+
+let response status operation =
+  Yojson.Safe.Util.(member "responses" operation |> member (string_of_int status))
+
+(* Where each case sits in the result, which a generator needs to rebuild the result type. *)
+let test_x_ocapi_cases () =
+  let open Ocapi.Endpoint in
+  let e =
+    endpoint "/r" (Provide.return "")
+      Response.
+        [
+          json ~status:200 (named "item") Prism.ok;
+          json ~status:404 (named "error") Prism.error;
+          outside ~status:500 ();
+        ]
+  in
+  let operation = Ocapi_openapi.operation e in
+  Alcotest.(check string)
+    "Ok" {|[{"constructor":"Ok","schema":{"$ref":"#/components/schemas/Item"}}]|}
+    (response 200 operation |> Yojson.Safe.Util.member "x-ocapi-cases" |> Yojson.Safe.to_string);
+  Alcotest.(check string)
+    "Error" {|[{"constructor":"Error","schema":{"$ref":"#/components/schemas/Error"}}]|}
+    (response 404 operation |> Yojson.Safe.Util.member "x-ocapi-cases" |> Yojson.Safe.to_string);
+  Alcotest.(check bool)
+    "nothing without a constructor" true
+    (response 500 operation |> Yojson.Safe.Util.member "x-ocapi-cases" = `Null);
+  let gone =
+    Prism.make ~inject:(fun () -> `Gone) ~project:(function `Gone -> Some ())
+    |> Prism.named "Gone"
+  in
+  Alcotest.(check string)
+    "named" {|[{"constructor":"Gone"}]|}
+    (endpoint "/g" (Provide.return "") [ Response.empty ~status:410 gone ]
+    |> Ocapi_openapi.operation |> response 410
+    |> Yojson.Safe.Util.member "x-ocapi-cases"
+    |> Yojson.Safe.to_string)
+
+(* A oneOf whose cases name their value of one property maps each value to its schema. *)
+let test_discriminator () =
+  let open Ocapi.Endpoint in
+  let a = Prism.make ~inject:(fun s -> `A s) ~project:(function `A s -> Some s | `B _ -> None) in
+  let b = Prism.make ~inject:(fun s -> `B s) ~project:(function `B s -> Some s | `A _ -> None) in
+  let at ?da ?db ?(codec_b = named "b") () =
+    endpoint "/d" (Provide.return "")
+      Response.
+        [
+          json ~status:200 ?discriminator:da (named "a") a;
+          json ~status:200 ?discriminator:db codec_b b;
+        ]
+    |> Ocapi_openapi.operation |> response 200
+    |> Yojson.Safe.Util.(fun r -> member "content" r |> member "application/json")
+    |> Yojson.Safe.Util.member "schema"
+  in
+  Alcotest.(check string)
+    "mapped"
+    ({|{"oneOf":[{"$ref":"#/components/schemas/A"},{"$ref":"#/components/schemas/B"}],|}
+   ^ {|"discriminator":{"propertyName":"kind","mapping":{"a":"#/components/schemas/A","b":"#/components/schemas/B"}}}|}
+    )
+    (at ~da:("kind", "a") ~db:("kind", "b") () |> Yojson.Safe.to_string);
+  Alcotest.(check bool) "none" true (at () |> Yojson.Safe.Util.member "discriminator" = `Null);
+  let errors =
+    endpoint "/e" (Provide.return "")
+      (Response.json ~status:400 ~discriminator:("kind", "a") (named "a") a
+      :: Response.errors ~discriminator:("kind", "error") (named "error")
+           ~status:(fun _ -> 400)
+           (Prism.make ~inject:(fun s -> `B s) ~project:(function `B s -> Some s | `A _ -> None))
+           [ 400, "bad" ])
+    |> Ocapi_openapi.operation |> response 400
+    |> Yojson.Safe.Util.(fun r -> member "content" r |> member "application/json")
+    |> Yojson.Safe.Util.(fun r -> member "schema" r |> member "discriminator")
+  in
+  Alcotest.(check string)
+    "with errors"
+    {|{"propertyName":"kind","mapping":{"a":"#/components/schemas/A","error":"#/components/schemas/Error"}}|}
+    (Yojson.Safe.to_string errors)
+
+let test_operation_id () =
+  let open Ocapi.Endpoint in
+  let get id template =
+    make ~meth:`GET template ?operation_id:id (Provide.return "") ~responses:[ echo ]
+  in
+  Alcotest.(check string)
+    "documented" {|"listItems"|}
+    (Ocapi_openapi.operation (get (Some "listItems") "/items")
+    |> Yojson.Safe.Util.member "operationId"
+    |> Yojson.Safe.to_string);
+  Alcotest.check_raises "unique" (Invalid_argument "operationId same names both GET /a and GET /b")
+    (fun () -> ignore Ocapi_openapi.(paths [ get (Some "same") "/a"; get (Some "same") "/b" ]))
+
 (* A case or provider left undescribed does not hide the description another one gives. *)
 let test_the_first_description_written () =
   let open Ocapi.Endpoint in
-  let named name =
-    Codec.make ~name ~schema:string_schema (fun s -> `String s) Yojson.Safe.Util.to_string
-  in
   let describe e status =
     Ocapi_openapi.operation
       ~common:[ { status = 500; description = "transport 500"; scope = `Every_operation } ]
       e
-    |> Yojson.Safe.Util.(fun o -> member "responses" o |> member (string_of_int status))
+    |> response status
     |> Yojson.Safe.Util.(fun r -> member "description" r |> to_string)
   in
   let cases =
@@ -436,5 +528,8 @@ let () =
           Alcotest.test_case "reason phrases" `Quick test_reason_phrases;
           Alcotest.test_case "the first description written" `Quick
             test_the_first_description_written;
+          Alcotest.test_case "x-ocapi-cases" `Quick test_x_ocapi_cases;
+          Alcotest.test_case "discriminator" `Quick test_discriminator;
+          Alcotest.test_case "operation id" `Quick test_operation_id;
         ] );
     ]

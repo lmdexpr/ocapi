@@ -29,14 +29,28 @@ module Codec = struct
 end
 
 module Prism = struct
-  type ('r, 'a) t = { inject : 'a -> 'r; project : 'r -> 'a option }
+  type ('r, 'a) t = { inject : 'a -> 'r; project : 'r -> 'a option; constructor : string option }
 
-  let make ~inject ~project = { inject; project }
-  let id = { inject = Fun.id; project = Option.some }
-  let ok = { inject = Result.ok; project = Result.to_option }
-  let error = { inject = Result.error; project = (function Error e -> Some e | Ok _ -> None) }
-  let some = { inject = Option.some; project = Fun.id }
-  let none = { inject = (fun () -> None); project = (function None -> Some () | Some _ -> None) }
+  let make ~inject ~project = { inject; project; constructor = None }
+  let named constructor t = { t with constructor = Some constructor }
+  let id = { inject = Fun.id; project = Option.some; constructor = None }
+  let ok = { inject = Result.ok; project = Result.to_option; constructor = Some "Ok" }
+
+  let error =
+    {
+      inject = Result.error;
+      project = (function Error e -> Some e | Ok _ -> None);
+      constructor = Some "Error";
+    }
+
+  let some = { inject = Option.some; project = Fun.id; constructor = Some "Some" }
+
+  let none =
+    {
+      inject = (fun () -> None);
+      project = (function None -> Some () | Some _ -> None);
+      constructor = Some "None";
+    }
 end
 
 module Request = struct
@@ -407,6 +421,8 @@ module Response = struct
     select : 'r -> ((string * string) list * Reply.body) option;
     decode : (string * string) list -> string -> ('r, string) result option;
     documented_headers : (string * string) list;
+    constructor : string option;
+    discriminator : (string * string) option;
   }
 
   type 'r origin = Produced of 'r produced | Outside
@@ -430,11 +446,13 @@ module Response = struct
             (* Only an empty body: a case of the same status with a body must get the chance
                to decode it. *)
             documented_headers = [];
+            constructor = prism.constructor;
+            discriminator = None;
             decode = (fun _ body -> if body = "" then Some (Ok (prism.inject ())) else None);
           };
     }
 
-  let json ~status ?description (codec : (_, _) Codec.t) (prism : _ Prism.t) =
+  let json ~status ?description ?discriminator (codec : (_, _) Codec.t) (prism : _ Prism.t) =
     {
       status;
       description;
@@ -445,11 +463,13 @@ module Response = struct
             select =
               (fun r -> prism.project r |> Option.map @@ fun a -> [], Reply.Json (codec.to_json a));
             documented_headers = [];
+            constructor = prism.constructor;
+            discriminator;
             decode = (fun _ body -> Some (decoded codec.of_json body |> Result.map prism.inject));
           };
     }
 
-  let json_with_headers ~status ?description ?(headers = []) (codec : (_, _) Codec.t)
+  let json_with_headers ~status ?description ?(headers = []) ?discriminator (codec : (_, _) Codec.t)
     (prism : _ Prism.t) =
     {
       status;
@@ -466,6 +486,8 @@ module Response = struct
                 Some
                   (decoded codec.of_json body |> Result.map @@ fun a -> prism.inject (received, a)));
             documented_headers = headers;
+            constructor = prism.constructor;
+            discriminator;
           };
     }
 
@@ -479,6 +501,8 @@ module Response = struct
             content = No_content;
             select = (fun r -> prism.project r |> Option.map @@ fun j -> [], Reply.Json j);
             documented_headers = [];
+            constructor = prism.constructor;
+            discriminator = None;
             decode = (fun _ body -> Some (decoded Fun.id body |> Result.map prism.inject));
           };
     }
@@ -495,13 +519,16 @@ module Response = struct
               (fun r ->
                 prism.project r |> Option.map @@ fun (headers, body) -> headers, Reply.Raw body);
             documented_headers = [];
+            constructor = prism.constructor;
+            discriminator = None;
             decode = (fun headers body -> Some (Ok (prism.inject (headers, body))));
           };
     }
 
   let outside ?description ~status () = { status; description; origin = Outside }
 
-  let errors ?(without_body = []) (codec : (_, _) Codec.t) ~status (prism : _ Prism.t) documented =
+  let errors ?(without_body = []) ?discriminator (codec : (_, _) Codec.t) ~status
+    (prism : _ Prism.t) documented =
     documented
     |> List.map @@ fun (code, description) ->
        let description = Some description in
@@ -518,6 +545,8 @@ module Response = struct
                  content = No_content;
                  select = (fun r -> select r |> Option.map @@ fun _ -> [], Reply.Empty);
                  documented_headers = [];
+                 constructor = prism.constructor;
+                 discriminator = None;
                  decode = (fun _ _ -> None);
                };
          }
@@ -532,6 +561,8 @@ module Response = struct
                  select =
                    (fun r -> select r |> Option.map @@ fun e -> [], Reply.Json (codec.to_json e));
                  documented_headers = [];
+                 constructor = prism.constructor;
+                 discriminator;
                  decode =
                    (fun _ body ->
                      match decoded codec.of_json body with
@@ -553,6 +584,7 @@ type ('q, 'r, 'd) t = {
   headers : header list;
   tags : string list;
   summary : string option;
+  operation_id : string option;
   description : string option;
   provide : ('q, 'q, unit, unit, 'd) Provide.t;
   responses : ('r, 'd) Response.case list;
@@ -565,8 +597,48 @@ let parse_template template =
      let n = String.length s in
      if n >= 2 && s.[0] = '{' && s.[n - 1] = '}' then Param (String.sub s 1 (n - 2)) else Lit s
 
-let make ~meth template ?(hidden = false) ?(headers = []) ?(tags = []) ?summary ?description provide
-  ~responses =
+(* Either every case of a status with a body names its value of one property, with a named codec,
+   or none does: the document maps each value to a component, and generators guess from schema
+   names for whatever a mapping leaves out. *)
+let check_discriminators ~meth ~template responses =
+  let refuse status reason =
+    invalid_arg
+      (Printf.sprintf "the discriminator of %d in %s %s: %s" status (meth_to_string meth) template
+         reason)
+  in
+  let bodies =
+    responses
+    |> List.filter_map (fun (c : (_, _) Response.case) ->
+      match c.origin with
+      | Produced { content = Schema (name, _); discriminator; _ } ->
+        Some (c.status, name, discriminator)
+      | Produced { content = No_content; _ } | Outside -> None)
+  in
+  bodies
+  |> List.map (fun (status, _, _) -> status)
+  |> List.sort_uniq compare
+  |> List.iter @@ fun status ->
+     let cases = bodies |> List.filter (fun (s, _, _) -> s = status) in
+     match List.find_map (fun (_, _, d) -> d) cases with
+     | None -> ()
+     | Some (property, _) ->
+       cases
+       |> List.fold_left
+            (fun seen (_, name, d) ->
+              match d, name with
+              | None, _ -> refuse status "some cases have none"
+              | Some (p, _), _ when p <> property -> refuse status "the properties differ"
+              | Some _, None -> refuse status "a case without a named codec"
+              | Some (_, value), Some name -> (
+                match List.assoc_opt value seen with
+                | Some known when known <> name ->
+                  refuse status ("the value " ^ value ^ " stands for two schemas")
+                | Some _ | None -> (value, name) :: seen))
+            []
+       |> ignore
+
+let make ~meth template ?(hidden = false) ?(headers = []) ?(tags = []) ?summary ?description
+  ?operation_id provide ~responses =
   let segments = parse_template template in
   let in_template = segments |> List.filter_map (function Param p -> Some p | Lit _ -> None) in
   let provided =
@@ -587,8 +659,21 @@ let make ~meth template ?(hidden = false) ?(headers = []) ?(tags = []) ?summary 
   let provide = { provide with Provide.resolve = provide.Provide.resolve } in
 
   if responses = [] then invalid_arg (template ^ " declares no response");
+  check_discriminators ~meth ~template responses;
 
-  { meth; template; segments; hidden; headers; tags; summary; description; provide; responses }
+  {
+    meth;
+    template;
+    segments;
+    hidden;
+    headers;
+    tags;
+    summary;
+    operation_id;
+    description;
+    provide;
+    responses;
+  }
 
 let meth t = t.meth
 let template t = t.template
@@ -665,6 +750,8 @@ module Meta = struct
     content : schema option;
     headers : (string * string) list;
     outside : bool;
+    constructor : string option;
+    discriminator : (string * string) option;
   }
 
   type endpoint = {
@@ -675,6 +762,7 @@ module Meta = struct
     headers : header list;
     tags : string list;
     summary : string option;
+    operation_id : string option;
     description : string option;
     security : string list list;
     parameters : parameter list;
@@ -695,6 +783,8 @@ module Meta = struct
         content = None;
         headers = [];
         outside = true;
+        constructor = None;
+        discriminator = None;
       }
     | Produced p ->
       {
@@ -704,6 +794,8 @@ module Meta = struct
           (match p.content with Schema (name, s) -> Some (schema (name, s)) | No_content -> None);
         headers = p.documented_headers;
         outside = false;
+        constructor = p.constructor;
+        discriminator = p.discriminator;
       }
 
   let of_endpoint (t : (_, _, complete) t) =
@@ -715,6 +807,7 @@ module Meta = struct
       headers = t.headers;
       tags = t.tags;
       summary = t.summary;
+      operation_id = t.operation_id;
       description = t.description;
       security = t.provide.security;
       parameters = t.provide.parameters;

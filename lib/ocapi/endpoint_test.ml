@@ -464,6 +464,41 @@ let test_schemaless_parts_travel () =
     "the client refuses what the server would not parse" true
     (Result.is_error (encode e "AB"))
 
+(* Discriminators that the document could not map are refused when the endpoint is made, whether
+   or not the cases end up in a oneOf. *)
+let test_discriminators_are_checked () =
+  let open Ocapi.Endpoint in
+  let named name =
+    Codec.make ~name ~schema:string_schema (fun s -> `String s) Yojson.Safe.Util.to_string
+  in
+  let a = Prism.make ~inject:(fun s -> `A s) ~project:(function `A s -> Some s | `B _ -> None) in
+  let b = Prism.make ~inject:(fun s -> `B s) ~project:(function `B s -> Some s | `A _ -> None) in
+  let make ?da ?db ?(codec_a = named "a") ?(codec_b = named "b") () =
+    ignore
+      (endpoint "/d" (Provide.return "")
+         Response.
+           [
+             json ~status:200 ?discriminator:da codec_a a;
+             json ~status:200 ?discriminator:db codec_b b;
+           ])
+  in
+  let refused name reason f =
+    Alcotest.check_raises name
+      (Invalid_argument ("the discriminator of 200 in GET /d: " ^ reason))
+      f
+  in
+  make ();
+  make ~da:("kind", "a") ~db:("kind", "b") ();
+  make ~da:("kind", "a") ~db:("kind", "b") ~codec_b:(named "a") ();
+  refused "some" "some cases have none" (make ~da:("kind", "a"));
+  refused "one schema, some" "some cases have none" (make ~da:("kind", "a") ~codec_b:(named "a"));
+  refused "two properties" "the properties differ" (make ~da:("kind", "a") ~db:("type", "b"));
+  refused "unnamed" "a case without a named codec"
+    (make ~da:("kind", "a") ~db:("kind", "b")
+       ~codec_b:(Codec.make ~schema:string_schema (fun s -> `String s) Yojson.Safe.Util.to_string));
+  refused "one value, two schemas" "the value x stands for two schemas"
+    (make ~da:("kind", "x") ~db:("kind", "x"))
+
 let () =
   Alcotest.run "endpoint"
     [
@@ -473,6 +508,7 @@ let () =
             test_template_must_match_the_path_parameters;
           Alcotest.test_case "at least one response" `Quick test_at_least_one_response;
           Alcotest.test_case "templates are checked" `Quick test_templates_are_checked;
+          Alcotest.test_case "discriminators are checked" `Quick test_discriminators_are_checked;
         ] );
       ( "provide",
         [

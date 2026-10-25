@@ -63,11 +63,17 @@ module Codec : sig
 end
 
 (** Where a value sits in a handler's result: [project] takes it out for the server, [inject] puts
-    it back for the client. *)
+    it back for the client. [constructor] names the place for the document ([x-ocapi-cases]), so
+    that a generator can rebuild the result type: [ok] and [error] are [Ok] and [Error]. *)
 module Prism : sig
-  type ('r, 'a) t = { inject : 'a -> 'r; project : 'r -> 'a option }
+  type ('r, 'a) t = { inject : 'a -> 'r; project : 'r -> 'a option; constructor : string option }
 
   val make : inject:('a -> 'r) -> project:('r -> 'a option) -> ('r, 'a) t
+  (** Without a constructor name; see {!named}. *)
+
+  val named : string -> ('r, 'a) t -> ('r, 'a) t
+  (** The prism with a constructor name, e.g. [Prism.make ~inject ~project |> Prism.named "Gone"]. *)
+
   val id : ('a, 'a) t
   val ok : (('a, 'e) result, 'a) t
   val error : (('a, 'e) result, 'e) t
@@ -353,12 +359,24 @@ module Response : sig
   val empty : status:int -> ?description:string -> ('r, unit) Prism.t -> ('r, 'd) case
 
   val json :
-    status:int -> ?description:string -> ('a, 'd) Codec.t -> ('r, 'a) Prism.t -> ('r, 'd) case
+    status:int ->
+    ?description:string ->
+    ?discriminator:string * string ->
+    ('a, 'd) Codec.t ->
+    ('r, 'a) Prism.t ->
+    ('r, 'd) case
+  (** [discriminator] is a property of the codec's JSON and its value in this case, e.g.
+      [("kind", "item")]. When several cases share a status, the document writes their schemas as
+      a [oneOf] with a [discriminator] mapping each value to its schema: either every case of the
+      status with a body has one, with the same property and a named codec, or none has, else
+      {!Endpoint.make} raises [Invalid_argument]. Nothing checks that the JSON carries the value;
+      the codec does. *)
 
   val json_with_headers :
     status:int ->
     ?description:string ->
     ?headers:(string * string) list ->
+    ?discriminator:string * string ->
     ('a, 'd) Codec.t ->
     ('r, (string * string) list * 'a) Prism.t ->
     ('r, 'd) case
@@ -385,6 +403,7 @@ module Response : sig
 
   val errors :
     ?without_body:int list ->
+    ?discriminator:string * string ->
     ('e, 'd) Codec.t ->
     status:('e -> int) ->
     ('r, 'e) Prism.t ->
@@ -393,7 +412,7 @@ module Response : sig
   (** Error cases from a list of documented statuses and descriptions. An error taken out of the
       result matches the case of the status [status] gives it; an error mapped to an undocumented
       status matches no case. Statuses in [without_body] send no body, so the client cannot decode
-      them. *)
+      them. [discriminator] is as in {!json}, the same for every case with a body. *)
 end
 
 type ('q, 'r, +'d) t
@@ -413,15 +432,18 @@ val make :
   ?tags:string list ->
   ?summary:string ->
   ?description:string ->
+  ?operation_id:string ->
   ('q, 'q, Provide.body_unread, _, 'd) Provide.t ->
   responses:('r, 'd) Response.case list ->
   ('q, 'r, 'd) t
 (** The second argument is the path template, e.g. [/items/{id}/tags]. Its [{name}]
-    segments must be exactly the path parameters the provider declares and [responses] must not be
-    empty, else [Invalid_argument].
+    segments must be exactly the path parameters the provider declares, [responses] must not be
+    empty and the discriminators of each status must agree ({!Response.json}), else
+    [Invalid_argument].
     [responses] are matched in declaration order and documented in status order. A [hidden]
-    endpoint is left out of the OpenAPI document. [tags], [summary] and [description] are
-    documented when given. *)
+    endpoint is left out of the OpenAPI document. [tags], [summary], [description] and
+    [operation_id] (the name generators give the call, unique in a document) are documented when
+    given. *)
 
 val meth : (_, _, _) t -> meth
 val template : (_, _, _) t -> string
@@ -481,6 +503,8 @@ module Meta : sig
     content : schema option;  (** The JSON body's schema; [None] for no documented body. *)
     headers : (string * string) list;  (** Names and descriptions of headers chosen per response. *)
     outside : bool;  (** Declared by {!Response.outside}: not sent through the endpoint. *)
+    constructor : string option;  (** From the prism: {!Prism.named}. *)
+    discriminator : (string * string) option;
   }
 
   type endpoint = {
@@ -491,6 +515,7 @@ module Meta : sig
     headers : header list;
     tags : string list;
     summary : string option;
+    operation_id : string option;
     description : string option;
     security : string list list;
       (** One list of alternative scheme names per provider; every provider must be satisfied. *)

@@ -88,7 +88,13 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Item" }
               }
-            }
+            },
+            "x-ocapi-cases": [
+              {
+                "constructor": "Ok",
+                "schema": { "$ref": "#/components/schemas/Item" }
+              }
+            ]
           },
           "400": {
             "description": "The request is framed ambiguously (a body on GET, conflicting lengths)"
@@ -99,7 +105,13 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" }
               }
-            }
+            },
+            "x-ocapi-cases": [
+              {
+                "constructor": "Error",
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            ]
           },
           "500": { "description": "Internal error" }
         }

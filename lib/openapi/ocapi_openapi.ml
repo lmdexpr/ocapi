@@ -14,11 +14,11 @@ let rec metas = function
 let pascal name =
   name |> String.split_on_char '_' |> List.map String.capitalize_ascii |> String.concat ""
 
+let component_ref name = "#/components/schemas/" ^ pascal name
+
 (* A named schema is a component; an unnamed one is written where it is used. *)
 let schema_ref ({ name; schema } : Meta.schema) =
-  match name with
-  | Some name -> `Assoc [ "$ref", `String ("#/components/schemas/" ^ pascal name) ]
-  | None -> schema
+  match name with Some name -> `Assoc [ "$ref", `String (component_ref name) ] | None -> schema
 
 let content ?(media = "application/json") schema = `Assoc [ media, `Assoc [ "schema", schema ] ]
 let component_name = pascal
@@ -137,6 +137,45 @@ let headers_of ~endpoint_headers ?(cases = []) (endpoint : Meta.endpoint) =
                  ] )) );
     ]
 
+let operation_name (endpoint : Meta.endpoint) =
+  Endpoint.meth_to_string endpoint.meth ^ " " ^ endpoint.template
+
+(* Endpoint.make has checked that the cases of a status with a body either all name their value of
+   one property, with a named codec, or none does. *)
+let discriminator cases =
+  let tagged =
+    cases
+    |> List.filter_map (fun (c : Meta.case) ->
+      match c.discriminator, c.content with
+      | Some (property, value), Some { name = Some name; _ } ->
+        Some (property, (value, `String (component_ref name)))
+      | Some _, Some { name = None; _ } | Some _, None | None, (Some _ | None) -> None)
+  in
+  match tagged with
+  | [] -> []
+  | (property, _) :: _ ->
+    let mapping =
+      tagged |> List.map snd
+      |> List.fold_left (fun acc (v, t) -> if List.mem_assoc v acc then acc else acc @ [ v, t ]) []
+    in
+    [ "discriminator", `Assoc [ "propertyName", `String property; "mapping", `Assoc mapping ] ]
+
+(* What OpenAPI cannot say: where each case sits in the handler's result. *)
+let x_ocapi_cases cases =
+  let produced = cases |> List.filter (fun (c : Meta.case) -> not c.outside) in
+  if List.exists (fun (c : Meta.case) -> Option.is_some c.constructor) produced then
+    [
+      ( "x-ocapi-cases",
+        `List
+          (produced
+          |> List.map @@ fun (c : Meta.case) ->
+             `Assoc
+               (optional "constructor" (described c.constructor)
+               @ optional "schema" (Option.map schema_ref c.content))) );
+    ]
+  else
+    []
+
 (* What the handler's cases declare wins over what the providers declare, which wins over what
    the transport declares: the more specific source of one status. Its description is the first
    one written, in the same order, so that a case or provider left undescribed does not hide the
@@ -194,12 +233,13 @@ let responses ~(common : Endpoint.common list) (endpoint : Meta.endpoint) =
       match schemas with
       | [] -> []
       | [ schema ] -> [ "content", content schema ]
-      | schemas -> [ "content", content (`Assoc [ "oneOf", `List schemas ]) ]
+      | schemas ->
+        [ "content", content (`Assoc ([ "oneOf", `List schemas ] @ discriminator cases)) ]
     in
     (* The endpoint headers go out through [reply] and [resolve] only: a status that only
        [outside] cases declare never carries them. *)
     let endpoint_headers = List.exists (fun (c : Meta.case) -> not c.outside) cases in
-    let rest = headers_of ~endpoint_headers ~cases endpoint @ content in
+    let rest = headers_of ~endpoint_headers ~cases endpoint @ content @ x_ocapi_cases cases in
     status, (string_of_int status, `Assoc (("description", description_of status) :: rest))
   in
   `Assoc
@@ -251,6 +291,7 @@ let operation_of ~common (endpoint : Meta.endpoint) =
     (tags
     @ optional "summary" (described endpoint.summary)
     @ optional "description" (described endpoint.description)
+    @ optional "operationId" (described endpoint.operation_id)
     @ security @ request @ parameters
     @ [ "responses", responses ~common endpoint ])
 
@@ -297,7 +338,13 @@ let check_unique metas =
            if shape known = shape e && known.template <> e.template then
              invalid_arg ("paths " ^ known.template ^ " and " ^ e.template ^ " are the same path");
            if known.template = e.template && known.meth = e.meth then
-             invalid_arg (Endpoint.meth_to_string e.meth ^ " " ^ e.template ^ " is declared twice"));
+             invalid_arg (operation_name e ^ " is declared twice");
+           match known.operation_id, e.operation_id with
+           | Some a, Some b when a = b ->
+             invalid_arg
+               ("operationId " ^ a ^ " names both " ^ operation_name known ^ " and "
+              ^ operation_name e)
+           | (Some _ | None), (Some _ | None) -> ());
          e :: seen)
        []
   |> ignore

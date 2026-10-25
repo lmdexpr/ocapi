@@ -132,6 +132,12 @@ answers (`~common`). Descriptions, summaries, tags and codec names are optional:
 is left out of the document, a response without a description gets the reason phrase of its
 status, and a codec without a name is written inline.
 
+For generators, `Endpoint.make ~operation_id` names the call (unique in a document), and each
+response lists where its cases sit in the handler's result under `x-ocapi-cases`: the prism's
+constructor (`Prism.ok` is `Ok`, `Prism.named "Gone"` names your own) with the schema. Cases of
+one status are a `oneOf`; with `Response.json ~discriminator:("kind", "item")` on each of them, a
+`discriminator` maps each value to its schema.
+
 The document takes only endpoints whose every part has a schema. `Codec.custom`,
 `Value.custom` and `Response.unspecified_json` make parts without one: such an endpoint serves
 and calls as any other, but passing it to `Ocapi_openapi` is a type error.
