@@ -12,6 +12,8 @@
     (run
      %{ocamlc}
      -I
+     %{ocaml_where}
+     -I
      %{project_root}/lib/ocapi/.ocapi.objs/byte
      -I
      ../../.ocapi_openapi.objs/byte
@@ -39,6 +41,8 @@
     2
     (run
      %{ocamlc}
+     -I
+     %{ocaml_where}
      -I
      %{project_root}/lib/ocapi/.ocapi.objs/byte
      -c
