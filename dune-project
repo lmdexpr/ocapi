@@ -50,6 +50,20 @@
   (alcotest :with-test)))
 
 (package
+ (name ocapi-openapi)
+ (synopsis "OpenAPI 3.1 documents of ocapi endpoints")
+ (description
+  "Derives the OpenAPI 3.1 document of ocapi endpoint values. Only endpoints whose every part\nhas a schema are documented, which the types check.")
+ (depends
+  (ocaml
+   (>= 5.3.0))
+  dune
+  (ocapi
+   (= :version))
+  yojson
+  (alcotest :with-test)))
+
+(package
  (name ocapi-jsonschema)
  (synopsis "Use ppx_deriving_jsonschema schemas in ocapi endpoints")
  (description
@@ -59,6 +73,8 @@
    (>= 5.3.0))
   dune
   (ocapi
+   (= :version))
+  (ocapi-openapi
    (= :version))
   (ppx_deriving_jsonschema
    (>= 0.0.7))

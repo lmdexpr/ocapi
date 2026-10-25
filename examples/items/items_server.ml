@@ -10,16 +10,18 @@ let rec add store name =
   if Atomic.compare_and_set store items (item :: items) then item else add store name
 
 let routes store =
-  [
-    Items_api.Index.endpoint
-    |> Ocapi.Server.handle (fun { Items_api.Index.limit } ->
-      let items = Atomic.get store |> List.rev in
-      Option.fold limit ~none:items ~some:(fun n -> take n items));
-    Items_api.Get.endpoint
-    |> Ocapi.Server.handle (fun { Items_api.Get.id } ->
-      Atomic.get store
-      |> List.find_opt (fun (item : Items_api.item) -> item.id = id)
-      |> Option.to_result ~none:"not_found");
-    Items_api.Create.endpoint
-    |> Ocapi.Server.handle (fun { Items_api.Create.name } -> add store name);
-  ]
+  Ocapi.Server.
+    [
+      route
+        (module Items_api.Index)
+        (fun { limit } ->
+          let items = Atomic.get store |> List.rev in
+          Option.fold limit ~none:items ~some:(fun n -> take n items));
+      route
+        (module Items_api.Get)
+        (fun { id } ->
+          Atomic.get store
+          |> List.find_opt (fun (item : Items_api.item) -> item.id = id)
+          |> Option.to_result ~none:"not_found");
+      route (module Items_api.Create) (fun { name } -> add store name);
+    ]

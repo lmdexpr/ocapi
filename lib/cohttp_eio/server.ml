@@ -170,7 +170,7 @@ let run ~net ?(addr = Eio.Net.Ipaddr.V4.loopback) ~port ?max_connections ?max_bo
     (Cohttp_eio.Server.make ~callback ())
     ~on_error:on_connection_error
 
-let common : Ocapi.Endpoint.Openapi.common list =
+let common : Ocapi.Endpoint.common list =
   [
     {
       status = 400;

@@ -5,7 +5,7 @@ let escape key =
   key |> String.split_on_char '~' |> String.concat "~0" |> String.split_on_char '/'
   |> String.concat "~1"
 
-let component name = "#/components/schemas/" ^ escape (Ocapi.Endpoint.Openapi.component_name name)
+let component name = "#/components/schemas/" ^ escape (Ocapi_openapi.component_name name)
 let local = "#/$defs/"
 let after prefix s = String.sub s (String.length prefix) (String.length s - String.length prefix)
 
@@ -88,7 +88,7 @@ let standalone ~definitions name schema =
     `Assoc
       ([
          "$schema", `String Ppx_deriving_jsonschema_runtime.schema_version;
-         "title", `String (Ocapi.Endpoint.Openapi.component_name name);
+         "title", `String (Ocapi_openapi.component_name name);
        ]
       @ (match defs with [] -> [] | defs -> [ "$defs", `Assoc defs ])
       @ List.remove_assoc "$defs" fields)
@@ -96,5 +96,5 @@ let standalone ~definitions name schema =
     invalid_arg ("schema " ^ name ^ " is not a JSON object")
 
 let documents ?(definitions = []) endpoints =
-  Ocapi.Endpoint.Openapi.schemas endpoints
+  Ocapi_openapi.schemas endpoints
   |> List.map @@ fun (name, schema) -> name, standalone ~definitions name schema

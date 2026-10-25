@@ -12,6 +12,7 @@ depends: [
   "ocaml" {>= "5.3.0"}
   "dune" {>= "3.23"}
   "ocapi" {= version}
+  "ocapi-openapi" {= version}
   "ppx_deriving_jsonschema" {>= "0.0.7"}
   "yojson"
   "alcotest" {with-test}

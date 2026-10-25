@@ -1,0 +1,11 @@
+(library
+ (name ocapi_openapi)
+ (public_name ocapi-openapi)
+ (modules ocapi_openapi)
+ (libraries ocapi yojson))
+
+(test
+ (name ocapi_openapi_test)
+ (package ocapi-openapi)
+ (modules ocapi_openapi_test)
+ (libraries ocapi ocapi-openapi alcotest yojson))

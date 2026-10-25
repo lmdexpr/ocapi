@@ -7,11 +7,11 @@
 
 type target = { meth : Endpoint.meth; path : string }
 
-val target : _ Endpoint.t -> target
+val target : (_, _, _) Endpoint.t -> target
 (** The target of an endpoint without path parameters. Passing an endpoint with path parameters
     is a bug of the caller: [Invalid_argument]. *)
 
-val fill : _ Endpoint.t -> (string * string) list -> (target, string) result
+val fill : (_, _, _) Endpoint.t -> (string * string) list -> (target, string) result
 (** The target with the [{name}] segments of the path template filled in. A value the server would
     not accept ({!Endpoint.Path.valid}) is not sent: [Error] with the reason. A name without a
     value is a bug of the caller: [Invalid_argument]. *)
@@ -49,7 +49,7 @@ val send : request -> response
 type error =
   [ `Invalid of string | `Unauthorized | `Undeclared of response | `Malformed of response * string ]
 
-val call : ?bearer:string -> ('q, 'r) Endpoint.t -> 'q -> ('r, [> error ]) result
+val call : ?bearer:string -> ('q, 'r, _) Endpoint.t -> 'q -> ('r, [> error ]) result
 (** Sends the request to the endpoint ({!Endpoint.encode}) and decodes the response into the
     handler's result with the endpoint's cases ({!Endpoint.decode}). Nothing is sent, and the
     result is [`Invalid], for a path or query value the server would not accept, a header name or value
@@ -59,3 +59,10 @@ val call : ?bearer:string -> ('q, 'r) Endpoint.t -> 'q -> ('r, [> error ]) resul
 
 val header : string -> (string * string) list -> string option
 (** Case-insensitive lookup. *)
+
+val invoke :
+  ?bearer:string ->
+  (module Endpoint.S with type request = 'q and type result = 'r) ->
+  'q ->
+  ('r, [> error ]) result
+(** {!call} for an endpoint declared as a module: [invoke (module Get) { id }]. *)

@@ -6,4 +6,4 @@
 (test
  (name bearer_auth_test)
  (modules bearer_auth_test)
- (libraries ocapi bearer_auth alcotest yojson))
+ (libraries ocapi ocapi-openapi bearer_auth alcotest yojson))

@@ -65,7 +65,7 @@ let test_required_documents_the_scheme () =
       ~responses:
         [ Ocapi.Endpoint.Response.empty ~status:204 ~description:"" Ocapi.Endpoint.Prism.id ]
   in
-  match Ocapi.Endpoint.Openapi.operation endpoint with
+  match Ocapi_openapi.operation endpoint with
   | `Assoc fields ->
     Alcotest.(check string)
       "security" {|[{"session":[]}]|}

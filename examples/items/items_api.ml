@@ -32,59 +32,103 @@ let error =
     Yojson.Safe.Util.(fun json -> member "error" json |> to_string)
 
 module Index = struct
-  type request = { limit : int option }
+  module Spec = struct
+    type request = { limit : int option }
+    type result = item list
+    type body = Endpoint.Provide.body_unread
+    type doc = Endpoint.complete
 
-  let endpoint =
-    let open Endpoint.Syntax in
-    Endpoint.make ~meth:`GET "/items" ~tags:[ "Item" ] ~summary:"Items"
-      ~responses:Endpoint.[ Response.json ~status:200 ~description:"The items" items Prism.id ]
-    @@
-    let+ limit =
-      Endpoint.Query.optional ~description:"At most this many items"
-        (Endpoint.Value.int ~minimum:1 ~maximum:100 ()) "limit" (fun r -> r.limit)
-      |> Endpoint.Provide.require_json ~status:400 ~description:"limit is not between 1 and 100"
-           error (fun _ -> "invalid_limit")
-    in
-    { limit }
+    include Endpoint.Defaults
+
+    let meth = `GET
+    let path = "/items"
+    let tags = [ "Item" ]
+    let summary = Some "Items"
+    let operation_id = Some "listItems"
+
+    let provide =
+      let open Endpoint.Syntax in
+      let+ limit =
+        Endpoint.Query.optional ~description:"At most this many items"
+          (Endpoint.Value.int ~minimum:1 ~maximum:100 ()) "limit" (fun r -> r.limit)
+        |> Endpoint.Provide.require_json ~status:400 ~description:"limit is not between 1 and 100"
+             error (fun _ -> "invalid_limit")
+      in
+      { limit }
+
+    let responses = Endpoint.[ Response.json ~status:200 ~description:"The items" items Prism.id ]
+  end
+
+  include Spec
+  include Endpoint.Make (Spec)
 end
 
 module Get = struct
-  type request = { id : string }
+  module Spec = struct
+    type request = { id : string }
+    type nonrec result = (item, string) result
+    type body = Endpoint.Provide.body_unread
+    type doc = Endpoint.complete
 
-  let endpoint =
-    let open Endpoint.Syntax in
-    Endpoint.make ~meth:`GET "/items/{id}" ~tags:[ "Item" ] ~summary:"One item"
-      ~responses:
-        Endpoint.
-          [
-            Response.json ~status:200 ~description:"The item" item Prism.ok;
-            Response.json ~status:404 ~description:"No such item" error Prism.error;
-          ]
-    @@
-    let+ id = Endpoint.Path.string ~description:"Item id" "id" (fun r -> r.id) in
-    { id }
+    include Endpoint.Defaults
+
+    let meth = `GET
+    let path = "/items/{id}"
+    let tags = [ "Item" ]
+    let summary = Some "One item"
+    let operation_id = Some "getItem"
+
+    let provide =
+      let open Endpoint.Syntax in
+      let+ id = Endpoint.Path.string ~description:"Item id" "id" (fun r -> r.id) in
+      { id }
+
+    let responses =
+      Endpoint.
+        [
+          Response.json ~status:200 ~description:"The item" item Prism.ok;
+          Response.json ~status:404 ~description:"No such item" error Prism.error;
+        ]
+  end
+
+  include Spec
+  include Endpoint.Make (Spec)
 end
 
 module Create = struct
-  type request = { name : string }
+  module Spec = struct
+    type request = { name : string }
+    type result = item
+    type body = Endpoint.Provide.body_read
+    type doc = Endpoint.complete
 
-  let new_item =
-    Endpoint.Codec.make ~name:"new_item" ~schema:(object_schema [ "name" ])
-      (fun name -> `Assoc [ "name", `String name ])
-      Yojson.Safe.Util.(fun json -> member "name" json |> to_string)
+    include Endpoint.Defaults
 
-  let endpoint =
-    let open Endpoint.Syntax in
-    Endpoint.make ~meth:`POST "/items" ~tags:[ "Item" ] ~summary:"Create an item"
-      ~responses:
-        Endpoint.[ Response.json ~status:201 ~description:"The created item" item Prism.id ]
-    @@
-    let+ name =
-      Endpoint.Body.json new_item (fun r -> r.name)
-      |> Endpoint.Provide.require_json ~status:400 ~description:"The body is not {\"name\": string}"
-           error (fun (`Malformed _) -> "malformed_body")
-    in
-    { name }
+    let meth = `POST
+    let path = "/items"
+    let tags = [ "Item" ]
+    let summary = Some "Create an item"
+    let operation_id = Some "createItem"
+
+    let new_item =
+      Endpoint.Codec.make ~name:"new_item" ~schema:(object_schema [ "name" ])
+        (fun name -> `Assoc [ "name", `String name ])
+        Yojson.Safe.Util.(fun json -> member "name" json |> to_string)
+
+    let provide =
+      let open Endpoint.Syntax in
+      let+ name =
+        Endpoint.Body.json new_item (fun r -> r.name)
+        |> Endpoint.Provide.require_json ~status:400
+             ~description:"The body is not {\"name\": string}" error (fun (`Malformed _) ->
+             "malformed_body")
+      in
+      { name }
+
+    let responses =
+      Endpoint.[ Response.json ~status:201 ~description:"The created item" item Prism.id ]
+  end
+
+  include Spec
+  include Endpoint.Make (Spec)
 end
-
-let endpoints = Endpoint.Openapi.Endpoints.[ Index.endpoint; Get.endpoint; Create.endpoint ]

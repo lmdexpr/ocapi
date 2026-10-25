@@ -51,7 +51,7 @@
 (executable
  (name openapi_main)
  (modules openapi_main)
- (libraries ocapi ocapi-cohttp-eio items_api yojson))
+ (libraries ocapi ocapi-openapi ocapi-cohttp-eio items_api yojson))
 
 ; The document is checked in; [dune test] fails when the endpoints change it, [dune promote]
 ; accepts the change.

@@ -1,4 +1,4 @@
-type route = Route : ('a, 'r) Endpoint.t * ('a -> 'r) -> route
+type route = Route : ('a, 'r, _) Endpoint.t * ('a -> 'r) -> route
 
 let handle f endpoint = Route (endpoint, f)
 
@@ -17,3 +17,6 @@ let dispatch routes (request : Endpoint.Request.t) =
 
 let serve ?(not_found = Endpoint.Reply.empty 404) routes request =
   dispatch routes request |> Option.value ~default:not_found
+
+let route (type q r) (module E : Endpoint.S with type request = q and type result = r) f =
+  handle f E.endpoint

@@ -18,16 +18,14 @@ val codec :
   schema ->
   ('a -> Yojson.Safe.t) ->
   (Yojson.Safe.t -> 'a) ->
-  'a Ocapi.Endpoint.Codec.t
+  ('a, 'd) Ocapi.Endpoint.Codec.t
 
 val components : (string * schema) list -> (string * Yojson.Safe.t) list
-(** Shared definitions (snake_case names) as components, for [Ocapi.Endpoint.Openapi.document
+(** Shared definitions (snake_case names) as components, for [Ocapi_openapi.document
     ~schemas]. A [#/$defs/x] that a schema does not define itself refers to the component [x]. *)
 
 val documents :
-  ?definitions:(string * schema) list ->
-  Ocapi.Endpoint.Openapi.Endpoints.t ->
-  (string * Yojson.Safe.t) list
+  ?definitions:(string * schema) list -> Ocapi_openapi.Endpoints.t -> (string * Yojson.Safe.t) list
 (** The schemas the endpoints refer to (snake_case names, in order of appearance), each as a
     standalone JSON Schema document with a title. References inside the schema are taken from the
     document root again; references to [definitions] go back to [#/$defs], where the definitions
