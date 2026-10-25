@@ -18,7 +18,7 @@ val codec :
   schema ->
   ('a -> Yojson.Safe.t) ->
   (Yojson.Safe.t -> 'a) ->
-  'a Ocapi.Endpoint.Codec.t
+  ('a, 'd) Ocapi.Endpoint.Codec.t
 
 val components : (string * schema) list -> (string * Yojson.Safe.t) list
 (** Shared definitions (snake_case names) as components, for [Ocapi.Endpoint.Openapi.document

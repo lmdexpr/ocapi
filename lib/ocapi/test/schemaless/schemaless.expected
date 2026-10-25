@@ -1,0 +1,9 @@
+File "./schemaless.ml.in", line 10, characters 41-42:
+10 | let _ = Ocapi.Endpoint.Openapi.operation e
+                                              ^
+Error: The value e has type
+         (unit, unit, Ocapi.Endpoint.schemaless) Ocapi.Endpoint.t
+       but an expression was expected of type
+         (unit, unit, Ocapi.Endpoint.complete) Ocapi.Endpoint.t
+       Type Ocapi.Endpoint.schemaless is not compatible with type
+         Ocapi.Endpoint.complete

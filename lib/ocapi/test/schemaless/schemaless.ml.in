@@ -1,0 +1,10 @@
+let e =
+  Ocapi.Endpoint.make ~meth:`GET "/a" (Ocapi.Endpoint.Provide.return ())
+    ~responses:
+      [
+        Ocapi.Endpoint.Response.json ~status:200
+          (Ocapi.Endpoint.Codec.custom (fun () -> assert false) ignore)
+          Ocapi.Endpoint.Prism.id;
+      ]
+
+let _ = Ocapi.Endpoint.Openapi.operation e

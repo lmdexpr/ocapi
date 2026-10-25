@@ -737,6 +737,32 @@ let test_optional_documentation () =
     (Yojson.Safe.to_string (Openapi.operation e));
   Alcotest.(check (list string)) "no components" [] (Openapi.schemas [ e ] |> List.map fst)
 
+(* Parts without a schema travel like the others; only the document refuses them, at compile
+   time ([Openapi.operation] takes a [complete] endpoint). *)
+let test_schemaless_parts_travel () =
+  let open Ocapi.Endpoint in
+  let upper =
+    Value.custom
+      (fun s -> if String.uppercase_ascii s = s then Some s else None)
+      String.lowercase_ascii
+  in
+  let e =
+    make ~meth:`GET "/u/{id}"
+      (let+ id = Path.value upper "id" Fun.id in
+       id)
+      ~responses:
+        [
+          Response.json ~status:200
+            (Codec.custom (fun s -> `String s) Yojson.Safe.Util.to_string)
+            Prism.id;
+        ]
+  in
+  Alcotest.(check bool) "served" true (run e Fun.id "/u/AB" = Some (Reply.json 200 (`String "AB")));
+  Alcotest.(check bool) "not served" true (run e Fun.id "/u/ab" = Some (Reply.empty 404));
+  Alcotest.(check bool)
+    "the client refuses what the server would not parse" true
+    (Result.is_error (encode e "AB"))
+
 let () =
   Alcotest.run "endpoint"
     [
@@ -783,5 +809,6 @@ let () =
           Alcotest.test_case "responses from providers and transport" `Quick
             test_responses_from_providers_and_transport;
           Alcotest.test_case "optional documentation" `Quick test_optional_documentation;
+          Alcotest.test_case "schemaless parts travel" `Quick test_schemaless_parts_travel;
         ] );
     ]

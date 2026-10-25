@@ -4,7 +4,7 @@
 
 type route
 
-val handle : ('q -> 'r) -> ('q, 'r) Endpoint.t -> route
+val handle : ('q -> 'r) -> ('q, 'r, _) Endpoint.t -> route
 (** [endpoint |> handle (fun request -> ...)]. *)
 
 val dispatch : route list -> Endpoint.Request.t -> Endpoint.Reply.t option

@@ -1,4 +1,4 @@
-type route = Route : ('a, 'r) Endpoint.t * ('a -> 'r) -> route
+type route = Route : ('a, 'r, _) Endpoint.t * ('a -> 'r) -> route
 
 let handle f endpoint = Route (endpoint, f)
 

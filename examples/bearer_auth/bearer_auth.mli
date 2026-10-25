@@ -10,7 +10,7 @@ val bearer_token : string -> string option
 (** The bearer token in the value of an [Authorization] header. Not verified. *)
 
 val credential :
-  scheme:string -> ('q -> string option) -> ('q, string option, 's, 's) Ocapi.Endpoint.Provide.t
+  scheme:string -> ('q -> string option) -> ('q, string option, 's, 's, 'd) Ocapi.Endpoint.Provide.t
 (** The bearer token as presented. Nothing is verified, so nothing is required; [scheme] only goes
     into the documented security. *)
 
@@ -22,7 +22,7 @@ module Make (User : sig
 end) : sig
   type _ Effect.t += Current : User.t Effect.t
 
-  val required : unit -> ('q, unit, 's, 's) Ocapi.Endpoint.Provide.t
+  val required : unit -> ('q, unit, 's, 's, 'd) Ocapi.Endpoint.Provide.t
   (** Authenticates before the handler runs. Documents [User.scheme] as the security of the
       endpoint, and the 401 the handler of [Current] answers when it cannot authenticate. *)
 
