@@ -9,13 +9,17 @@ let meth_to_string = function
 
 module Codec = struct
   type 'a t = {
-    name : string;
+    name : string option;
     schema : Yojson.Safe.t;
     to_json : 'a -> Yojson.Safe.t;
     of_json : Yojson.Safe.t -> 'a;
   }
 
-  let make ~name ~schema to_json of_json = { name; schema; to_json; of_json }
+  let make ?name ~schema to_json of_json = { name; schema; to_json; of_json }
+  let name t = t.name
+  let schema t = t.schema
+  let to_json t = t.to_json
+  let of_json t = t.of_json
 end
 
 module Prism = struct
@@ -74,12 +78,12 @@ module Provide = struct
     name : string;
     in_ : [ `Path | `Query | `Header | `Cookie ];
     required : bool;
-    description : string;
+    description : string option;
     schema : Yojson.Safe.t;
     example : Yojson.Safe.t option;
   }
 
-  let parameter ~in_ ~required ?example ~description ~schema name =
+  let parameter ~in_ ~required ?example ?description ~schema name =
     { name; in_; required; description; schema; example }
 
   type body_unread
@@ -87,24 +91,26 @@ module Provide = struct
 
   (* ['i] and ['o] are the body's state before and after the provider; only the interface uses
      them. *)
-  type body = { name : string; schema : Yojson.Safe.t; content_type : string }
+  type body = { name : string option; schema : Yojson.Safe.t; content_type : string }
 
   type ('q, 'a, 'i, 'o) t = {
     security : string list list;
     parameters : parameter list;
     request_body : body option;
-    responses : (int * string) list;
-    rejections : (int * (string * Yojson.Safe.t)) list;
+    responses : (int * string option) list;
+    rejections : (int * (string option * Yojson.Safe.t)) list;
     encode : 'q -> (Encoded.t, string) result;
     resolve : Request.t -> ('a, Reply.t) result;
   }
+
+  let described responses = List.map (fun (status, d) -> status, Some d) responses
 
   let checked ?security ?(parameters = []) ?(responses = []) ~encode resolve =
     {
       security = Option.to_list security;
       parameters;
       request_body = None;
-      responses;
+      responses = described responses;
       rejections = [];
       encode;
       resolve;
@@ -137,19 +143,18 @@ module Provide = struct
   let require ?(responses = []) on_error t =
     {
       t with
-      responses = t.responses @ responses;
+      responses = t.responses @ described responses;
       resolve =
         (fun request -> t.resolve request |> Fun.flip Result.bind @@ Result.map_error on_error);
     }
 
-  let require_json ~status ~description (codec : _ Codec.t) reject t =
-    let t =
-      require
-        ~responses:[ status, description ]
-        (fun e -> Reply.json status (codec.to_json (reject e)))
-        t
-    in
-    { t with rejections = t.rejections @ [ status, (codec.name, codec.schema) ] }
+  let require_json ~status ?description (codec : _ Codec.t) reject t =
+    let t = require (fun e -> Reply.json status (codec.to_json (reject e))) t in
+    {
+      t with
+      responses = t.responses @ [ status, description ];
+      rejections = t.rejections @ [ status, (codec.name, codec.schema) ];
+    }
 
   let resolve t request = t.resolve request
   let encode t q = t.encode q
@@ -214,9 +219,9 @@ module Path = struct
          (function 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '-' -> true | _ -> false)
          value
 
-  let value ?(description = "") (value : _ Value.t) name get =
+  let value ?description (value : _ Value.t) name get =
     let parameter =
-      Provide.parameter ~in_:`Path ~required:true ~description ~schema:value.schema name
+      Provide.parameter ~in_:`Path ~required:true ?description ~schema:value.schema name
     in
     Provide.checked ~parameters:[ parameter ] ~encode:(fun q ->
       Value.printed value name (get q)
@@ -240,9 +245,9 @@ module Query = struct
     | (_, values) :: _ :: _ ->
       if unique then Error `Invalid else Ok (Some (String.concat "," values))
 
-  let param ~required ?example ~description (value : _ Value.t) name ~encode decode =
+  let param ~required ?example ?description (value : _ Value.t) name ~encode decode =
     let parameter =
-      Provide.parameter ~in_:`Query ~required ?example ~description ~schema:value.schema name
+      Provide.parameter ~in_:`Query ~required ?example ?description ~schema:value.schema name
     in
     Provide.checked ~parameters:[ parameter ] ~encode:(fun q ->
       encode q |> Result.map @@ fun query -> { Encoded.empty with query })
@@ -250,8 +255,8 @@ module Query = struct
 
   let parse (value : _ Value.t) s = value.parse s |> Option.to_result ~none:`Invalid
 
-  let required ?(unique = false) ?example ~description value name get =
-    param ~required:true ?example ~description value name ~encode:(fun q ->
+  let required ?(unique = false) ?example ?description value name get =
+    param ~required:true ?example ?description value name ~encode:(fun q ->
       Value.printed value name (get q) |> Result.map @@ fun s -> [ name, [ s ] ])
     @@ fun query ->
     match raw ~unique name query with
@@ -259,8 +264,8 @@ module Query = struct
     | Ok None -> Error `Missing
     | Ok (Some s) -> parse value s
 
-  let optional ?(unique = false) ?example ~description value name get =
-    param ~required:false ?example ~description value name ~encode:(fun q ->
+  let optional ?(unique = false) ?example ?description value name get =
+    param ~required:false ?example ?description value name ~encode:(fun q ->
       match get q with
       | None -> Ok []
       | Some v -> Value.printed value name v |> Result.map @@ fun s -> [ name, [ s ] ])
@@ -278,11 +283,11 @@ module Header = struct
      schemes, the others to the media types. *)
   let reserved = [ "authorization"; "content-type"; "accept" ]
 
-  let param ~required ?example ~description (value : _ Value.t) name ~encode decode =
+  let param ~required ?example ?description (value : _ Value.t) name ~encode decode =
     if List.mem (String.lowercase_ascii name) reserved then
       invalid_arg ("the header " ^ name ^ " is not a parameter; declare it as security or media");
     let parameter =
-      Provide.parameter ~in_:`Header ~required ?example ~description ~schema:value.schema name
+      Provide.parameter ~in_:`Header ~required ?example ?description ~schema:value.schema name
     in
     Provide.checked ~parameters:[ parameter ] ~encode:(fun q ->
       encode q |> Result.map @@ fun headers -> { Encoded.empty with headers })
@@ -290,15 +295,15 @@ module Header = struct
 
   let parse (value : _ Value.t) s = value.parse s |> Option.to_result ~none:`Invalid
 
-  let required ?example ~description value name get =
-    param ~required:true ?example ~description value name ~encode:(fun q ->
+  let required ?example ?description value name get =
+    param ~required:true ?example ?description value name ~encode:(fun q ->
       Value.printed value name (get q) |> Result.map @@ fun s -> [ name, s ])
     @@ function
     | None -> Error `Missing
     | Some s -> parse value s
 
-  let optional ?example ~description value name get =
-    param ~required:false ?example ~description value name ~encode:(fun q ->
+  let optional ?example ?description value name get =
+    param ~required:false ?example ?description value name ~encode:(fun q ->
       match get q with
       | None -> Ok []
       | Some v -> Value.printed value name v |> Result.map @@ fun s -> [ name, s ])
@@ -333,9 +338,9 @@ module Cookie = struct
          Some (String.trim (String.sub pair (i + 1) (String.length pair - i - 1)))
        | Some _ | None -> None
 
-  let param ~required ?example ~description (value : _ Value.t) name ~encode decode =
+  let param ~required ?example ?description (value : _ Value.t) name ~encode decode =
     let parameter =
-      Provide.parameter ~in_:`Cookie ~required ?example ~description ~schema:value.schema name
+      Provide.parameter ~in_:`Cookie ~required ?example ?description ~schema:value.schema name
     in
     Provide.checked ~parameters:[ parameter ] ~encode:(fun q ->
       encode q |> Result.map @@ fun cookies -> { Encoded.empty with cookies })
@@ -343,15 +348,15 @@ module Cookie = struct
 
   let parse (value : _ Value.t) s = value.parse s |> Option.to_result ~none:`Invalid
 
-  let required ?example ~description value name get =
-    param ~required:true ?example ~description value name ~encode:(fun q ->
+  let required ?example ?description value name get =
+    param ~required:true ?example ?description value name ~encode:(fun q ->
       printed value name (get q) |> Result.map @@ fun s -> [ name, s ])
     @@ function
     | None -> Error `Missing
     | Some s -> parse value s
 
-  let optional ?example ~description value name get =
-    param ~required:false ?example ~description value name ~encode:(fun q ->
+  let optional ?example ?description value name get =
+    param ~required:false ?example ?description value name ~encode:(fun q ->
       match get q with
       | None -> Ok []
       | Some v -> printed value name v |> Result.map @@ fun s -> [ name, s ])
@@ -382,13 +387,13 @@ module Body = struct
     | value -> Ok (Ok value)
     | exception exn -> Ok (Error (`Malformed (Printexc.to_string exn)))
 
-  let raw ~name ~schema ~content_type get =
+  let raw ?name ~schema ~content_type get =
     provider ~name ~schema ~content_type ~encode:get @@ fun (request : Request.t) ->
     Ok (request.body ())
 end
 
 module Response = struct
-  type content = No_content | Schema of string * Yojson.Safe.t
+  type content = No_content | Schema of string option * Yojson.Safe.t
 
   type 'r produced = {
     content : content;
@@ -398,7 +403,7 @@ module Response = struct
   }
 
   type 'r origin = Produced of 'r produced | Outside
-  type 'r case = { status : int; description : string; origin : 'r origin }
+  type 'r case = { status : int; description : string option; origin : 'r origin }
 
   (* The caller's decoder; which exceptions it raises cannot be known here. *)
   let decoded of_json body =
@@ -406,7 +411,7 @@ module Response = struct
     | value -> Ok value
     | exception exn -> Error (Printexc.to_string exn)
 
-  let empty ~status ~description (prism : (_, unit) Prism.t) =
+  let empty ~status ?description (prism : (_, unit) Prism.t) =
     {
       status;
       description;
@@ -422,7 +427,7 @@ module Response = struct
           };
     }
 
-  let json ~status ~description (codec : _ Codec.t) (prism : _ Prism.t) =
+  let json ~status ?description (codec : _ Codec.t) (prism : _ Prism.t) =
     {
       status;
       description;
@@ -437,7 +442,7 @@ module Response = struct
           };
     }
 
-  let json_with_headers ~status ~description ?(headers = []) (codec : _ Codec.t) (prism : _ Prism.t)
+  let json_with_headers ~status ?description ?(headers = []) (codec : _ Codec.t) (prism : _ Prism.t)
       =
     {
       status;
@@ -457,7 +462,7 @@ module Response = struct
           };
     }
 
-  let unspecified_json ~status ~description (prism : _ Prism.t) =
+  let unspecified_json ~status ?description (prism : _ Prism.t) =
     {
       status;
       description;
@@ -471,7 +476,7 @@ module Response = struct
           };
     }
 
-  let raw ~status ~description (prism : _ Prism.t) =
+  let raw ~status ?description (prism : _ Prism.t) =
     {
       status;
       description;
@@ -487,11 +492,12 @@ module Response = struct
           };
     }
 
-  let outside ~status ~description = { status; description; origin = Outside }
+  let outside ?description ~status () = { status; description; origin = Outside }
 
   let errors ?(without_body = []) (codec : _ Codec.t) ~status (prism : _ Prism.t) documented =
     documented
     |> List.map @@ fun (code, description) ->
+       let description = Some description in
        let select r =
          Option.bind (prism.project r) (fun e -> if status e = code then Some e else None)
        in
@@ -539,7 +545,7 @@ type ('q, 'r) t = {
   hidden : bool;
   headers : header list;
   tags : string list;
-  summary : string;
+  summary : string option;
   description : string option;
   provide : ('q, 'q, unit, unit) Provide.t;
   responses : 'r Response.case list;
@@ -552,7 +558,7 @@ let parse_template template =
      let n = String.length s in
      if n >= 2 && s.[0] = '{' && s.[n - 1] = '}' then Param (String.sub s 1 (n - 2)) else Lit s
 
-let make ~meth template ?(hidden = false) ?(headers = []) ~tags ~summary ?description provide
+let make ~meth template ?(hidden = false) ?(headers = []) ?(tags = []) ?summary ?description provide
   ~responses =
   let segments = parse_template template in
   let in_template = segments |> List.filter_map (function Param p -> Some p | Lit _ -> None) in
@@ -642,9 +648,72 @@ module Openapi = struct
   let pascal name =
     name |> String.split_on_char '_' |> List.map String.capitalize_ascii |> String.concat ""
 
-  let schema_ref name = `Assoc [ "$ref", `String ("#/components/schemas/" ^ pascal name) ]
+  (* A named schema is a component; an unnamed one is written where it is used. *)
+  let schema_ref (name, schema) =
+    match name with
+    | Some name -> `Assoc [ "$ref", `String ("#/components/schemas/" ^ pascal name) ]
+    | None -> schema
+
   let content ?(media = "application/json") schema = `Assoc [ media, `Assoc [ "schema", schema ] ]
   let component_name = pascal
+  let optional key = Option.fold ~none:[] ~some:(fun v -> [ key, v ])
+  let described = Option.map (fun d -> `String d)
+
+  (* The description of a response is required: without one of the caller's, the reason phrase. *)
+  let reason_phrase status =
+    match status with
+    | 100 -> "Continue"
+    | 101 -> "Switching Protocols"
+    | 200 -> "OK"
+    | 201 -> "Created"
+    | 202 -> "Accepted"
+    | 203 -> "Non-Authoritative Information"
+    | 204 -> "No Content"
+    | 205 -> "Reset Content"
+    | 206 -> "Partial Content"
+    | 300 -> "Multiple Choices"
+    | 301 -> "Moved Permanently"
+    | 302 -> "Found"
+    | 303 -> "See Other"
+    | 304 -> "Not Modified"
+    | 307 -> "Temporary Redirect"
+    | 308 -> "Permanent Redirect"
+    | 400 -> "Bad Request"
+    | 401 -> "Unauthorized"
+    | 402 -> "Payment Required"
+    | 403 -> "Forbidden"
+    | 404 -> "Not Found"
+    | 405 -> "Method Not Allowed"
+    | 406 -> "Not Acceptable"
+    | 407 -> "Proxy Authentication Required"
+    | 408 -> "Request Timeout"
+    | 409 -> "Conflict"
+    | 410 -> "Gone"
+    | 411 -> "Length Required"
+    | 412 -> "Precondition Failed"
+    | 413 -> "Content Too Large"
+    | 414 -> "URI Too Long"
+    | 415 -> "Unsupported Media Type"
+    | 416 -> "Range Not Satisfiable"
+    | 417 -> "Expectation Failed"
+    | 421 -> "Misdirected Request"
+    | 422 -> "Unprocessable Content"
+    | 425 -> "Too Early"
+    | 426 -> "Upgrade Required"
+    | 428 -> "Precondition Required"
+    | 429 -> "Too Many Requests"
+    | 431 -> "Request Header Fields Too Large"
+    | 451 -> "Unavailable For Legal Reasons"
+    | 500 -> "Internal Server Error"
+    | 501 -> "Not Implemented"
+    | 502 -> "Bad Gateway"
+    | 503 -> "Service Unavailable"
+    | 504 -> "Gateway Timeout"
+    | 505 -> "HTTP Version Not Supported"
+    | 511 -> "Network Authentication Required"
+    | status -> "Status " ^ string_of_int status
+
+  let description status d = `String (Option.value d ~default:(reason_phrase status))
 
   let parameter (p : Provide.parameter) =
     `Assoc
@@ -658,10 +727,10 @@ module Openapi = struct
              | `Header -> "header"
              | `Cookie -> "cookie") );
          "required", `Bool p.required;
-         "description", `String p.description;
-         "schema", p.schema;
        ]
-      @ Option.fold p.example ~none:[] ~some:(fun e -> [ "example", e ]))
+      @ optional "description" (described p.description)
+      @ [ "schema", p.schema ]
+      @ optional "example" p.example)
 
   (* Path parameters first, in template order; then query parameters in provider order. *)
   let parameters endpoint =
@@ -712,46 +781,54 @@ module Openapi = struct
   }
 
   (* What the handler's cases declare wins over what the providers declare, which wins over what
-     the transport declares: the more specific description of one status. *)
+     the transport declares: the more specific source of one status. Its description is the first
+     one written, in the same order, so that a case or provider left undescribed does not hide the
+     description another one gives. *)
   let responses ~common endpoint =
     let declared =
       endpoint.responses
       |> List.map (fun (c : _ Response.case) -> c.status)
       |> List.sort_uniq compare
     in
-    let unless_known known statuses =
-      statuses
-      |> List.fold_left
-           (fun acc (status, description) ->
-             if List.mem status known || List.mem_assoc status acc then
-               acc
-             else
-               acc @ [ status, description ])
-           []
-    in
-    let provided = endpoint.provide.responses |> unless_known declared in
-    let transport =
+    let transport_all =
       common
       |> List.filter_map (fun c ->
         match c.scope with
-        | `Every_operation -> Some (c.status, c.description)
+        | `Every_operation -> Some (c.status, Some c.description)
         | `Operations_with_body ->
-          Option.map (fun _ -> c.status, c.description) endpoint.provide.request_body)
-      |> unless_known (declared @ List.map fst provided)
+          Option.map (fun _ -> c.status, Some c.description) endpoint.provide.request_body)
     in
-    let described ~headers (status, description) =
+    let descriptions =
+      List.map (fun (c : _ Response.case) -> c.status, c.description) endpoint.responses
+      @ endpoint.provide.responses @ transport_all
+    in
+    let description_of status =
+      descriptions
+      |> List.find_map (fun (s, d) -> if s = status then d else None)
+      |> description status
+    in
+    let unless_known known statuses =
+      statuses
+      |> List.fold_left
+           (fun acc status ->
+             if List.mem status known || List.mem status acc then acc else acc @ [ status ])
+           []
+    in
+    let provided = endpoint.provide.responses |> List.map fst |> unless_known declared in
+    let transport = transport_all |> List.map fst |> unless_known (declared @ provided) in
+    let described ~headers status =
       let content =
         List.assoc_opt status endpoint.provide.rejections
-        |> Option.fold ~none:[] ~some:(fun (name, _) -> [ "content", content (schema_ref name) ])
+        |> Option.fold ~none:[] ~some:(fun named -> [ "content", content (schema_ref named) ])
       in
       ( status,
         ( string_of_int status,
           `Assoc
-            ((("description", `String description) :: headers_of ~endpoint_headers:headers endpoint)
+            (("description", description_of status)
+             :: headers_of ~endpoint_headers:headers endpoint
             @ content) ) )
     in
-    (* Several cases with one status: the description of the first, the schemas as a oneOf in
-       declaration order. *)
+    (* Several cases with one status: the schemas as a oneOf in declaration order. *)
     let document status =
       let cases =
         endpoint.responses |> List.filter (fun (c : _ Response.case) -> c.status = status)
@@ -760,7 +837,7 @@ module Openapi = struct
         cases
         |> List.filter_map (fun (c : _ Response.case) ->
           match c.origin with
-          | Produced { content = Schema (name, _); _ } -> Some (schema_ref name)
+          | Produced { content = Schema (name, schema); _ } -> Some (schema_ref (name, schema))
           | Produced { content = No_content; _ } | Outside -> None)
         |> List.fold_left (fun acc s -> if List.mem s acc then acc else acc @ [ s ]) []
       in
@@ -778,8 +855,7 @@ module Openapi = struct
           cases
       in
       let rest = headers_of ~endpoint_headers ~cases endpoint @ content in
-      let description = (List.hd cases).description in
-      status, (string_of_int status, `Assoc (("description", `String description) :: rest))
+      status, (string_of_int status, `Assoc (("description", description_of status) :: rest))
     in
     `Assoc
       (List.map document declared
@@ -789,7 +865,6 @@ module Openapi = struct
       |> List.map snd)
 
   let operation ?(common = []) endpoint =
-    let optional key = Option.fold ~none:[] ~some:(fun v -> [ key, v ]) in
     (* Each provider's schemes are alternatives, and every provider must be satisfied: one
        requirement object per choice of a scheme from each. *)
     let security =
@@ -817,17 +892,24 @@ module Openapi = struct
     in
     let request =
       endpoint.provide.request_body
-      |> Option.map (fun ({ name; content_type; _ } : Provide.body) ->
-        `Assoc [ "required", `Bool true; "content", content ~media:content_type (schema_ref name) ])
+      |> Option.map (fun ({ name; schema; content_type } : Provide.body) ->
+        `Assoc
+          [
+            "required", `Bool true;
+            "content", content ~media:content_type (schema_ref (name, schema));
+          ])
       |> optional "requestBody"
     in
     let parameters = match parameters endpoint with [] -> [] | ps -> [ "parameters", `List ps ] in
+    let tags =
+      match endpoint.tags with
+      | [] -> []
+      | tags -> [ "tags", `List (List.map (fun t -> `String t) tags) ]
+    in
     `Assoc
-      ([
-         "tags", `List (endpoint.tags |> List.map @@ fun t -> `String t);
-         "summary", `String endpoint.summary;
-       ]
-      @ (endpoint.description |> Option.map (fun d -> `String d) |> optional "description")
+      (tags
+      @ optional "summary" (described endpoint.summary)
+      @ optional "description" (described endpoint.description)
       @ security @ request @ parameters
       @ [ "responses", responses ~common endpoint ])
 
@@ -858,6 +940,8 @@ module Openapi = struct
             | Produced { content = Schema (name, schema); _ } -> Some (name, schema)
             | Produced { content = No_content; _ } | Outside -> None)
           e.responses)
+    (* Unnamed schemas are written inline, not as components. *)
+    |> List.filter_map (fun (name, schema) -> Option.map (fun name -> name, schema) name)
     |> List.fold_left add []
 
   (* OpenAPI forbids two operations of one method on a path, and two paths that differ only in the
@@ -894,7 +978,6 @@ module Openapi = struct
        t, `Assoc (ops |> List.filter_map @@ fun (t', op) -> if t = t' then Some op else None)
 
   let document ?servers ?tags ?security_schemes ?common ?(schemas = []) ~info endpoints =
-    let optional key = Option.fold ~none:[] ~some:(fun v -> [ key, v ]) in
     let all = List.fold_left add (endpoints |> schemas_of) schemas in
     let components =
       Option.fold security_schemes ~none:[] ~some:(fun s -> [ "securitySchemes", `Assoc s ])

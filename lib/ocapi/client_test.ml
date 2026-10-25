@@ -73,7 +73,7 @@ let get =
                Yojson.Safe.Util.to_string)
             Ocapi.Endpoint.Prism.ok;
           json ~status:404 ~description:"missing" error Ocapi.Endpoint.Prism.error;
-          outside ~status:500 ~description:"internal";
+          outside ~status:500 ~description:"internal" ();
         ]
 
 (* Answers [Send] with [status] and [body], recording the request. *)

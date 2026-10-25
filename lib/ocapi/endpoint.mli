@@ -15,19 +15,21 @@ type meth = [ `GET | `POST | `PUT | `PATCH | `DELETE ]
 val meth_to_string : meth -> string
 (** Upper-case name, e.g. ["PATCH"]. *)
 
-(** A value's name in the OpenAPI components, its schema, and its JSON encoder and decoder. *)
+(** A value's schema, its JSON encoder and decoder, and optionally its name in the OpenAPI
+    components. *)
 module Codec : sig
-  type 'a t = {
-    name : string;
-    schema : Yojson.Safe.t;
-    to_json : 'a -> Yojson.Safe.t;
-    of_json : Yojson.Safe.t -> 'a;
-  }
-  (** [name] is the snake_case name of the schema in the components. The server encodes with
-      [to_json], the client decodes with [of_json]; [of_json] raises on a value it rejects. *)
+  type 'a t
 
   val make :
-    name:string -> schema:Yojson.Safe.t -> ('a -> Yojson.Safe.t) -> (Yojson.Safe.t -> 'a) -> 'a t
+    ?name:string -> schema:Yojson.Safe.t -> ('a -> Yojson.Safe.t) -> (Yojson.Safe.t -> 'a) -> 'a t
+  (** [name] is the snake_case name of the schema in the components; without it, the schema is
+      written inline where it is used. The server encodes with [to_json], the client decodes with
+      [of_json]; [of_json] raises on a value it rejects. *)
+
+  val name : _ t -> string option
+  val schema : _ t -> Yojson.Safe.t
+  val to_json : 'a t -> 'a -> Yojson.Safe.t
+  val of_json : 'a t -> Yojson.Safe.t -> 'a
 end
 
 (** Where a value sits in a handler's result: [project] takes it out for the server, [inject] puts
@@ -99,7 +101,7 @@ module Provide : sig
     in_:[ `Path | `Query | `Header | `Cookie ] ->
     required:bool ->
     ?example:Yojson.Safe.t ->
-    description:string ->
+    ?description:string ->
     schema:Yojson.Safe.t ->
     string ->
     parameter
@@ -138,7 +140,7 @@ module Provide : sig
 
   val require_json :
     status:int ->
-    description:string ->
+    ?description:string ->
     'b Codec.t ->
     ('e -> 'b) ->
     ('q, ('a, 'e) result, 'i, 'o) t ->
@@ -202,7 +204,7 @@ module Query : sig
   val required :
     ?unique:bool ->
     ?example:Yojson.Safe.t ->
-    description:string ->
+    ?description:string ->
     'a Value.t ->
     string ->
     ('q -> 'a) ->
@@ -214,7 +216,7 @@ module Query : sig
   val optional :
     ?unique:bool ->
     ?example:Yojson.Safe.t ->
-    description:string ->
+    ?description:string ->
     'a Value.t ->
     string ->
     ('q -> 'a option) ->
@@ -228,7 +230,7 @@ module Header : sig
 
   val required :
     ?example:Yojson.Safe.t ->
-    description:string ->
+    ?description:string ->
     'a Value.t ->
     string ->
     ('q -> 'a) ->
@@ -239,7 +241,7 @@ module Header : sig
 
   val optional :
     ?example:Yojson.Safe.t ->
-    description:string ->
+    ?description:string ->
     'a Value.t ->
     string ->
     ('q -> 'a option) ->
@@ -252,7 +254,7 @@ module Cookie : sig
 
   val required :
     ?example:Yojson.Safe.t ->
-    description:string ->
+    ?description:string ->
     'a Value.t ->
     string ->
     ('q -> 'a) ->
@@ -262,7 +264,7 @@ module Cookie : sig
 
   val optional :
     ?example:Yojson.Safe.t ->
-    description:string ->
+    ?description:string ->
     'a Value.t ->
     string ->
     ('q -> 'a option) ->
@@ -280,7 +282,7 @@ module Body : sig
       of reading the body itself propagate. The document shows the codec's schema. *)
 
   val raw :
-    name:string ->
+    ?name:string ->
     schema:Yojson.Safe.t ->
     content_type:string ->
     ('q -> string) ->
@@ -290,16 +292,17 @@ module Body : sig
 end
 
 (** How a handler's result becomes a response, and a response the result again. Cases are tried in
-    declaration order. *)
+    declaration order. A case without a [description] is documented with the reason phrase of its
+    status ([OK], [Not Found], ...), as OpenAPI requires one. *)
 module Response : sig
   type 'r case
 
-  val empty : status:int -> description:string -> ('r, unit) Prism.t -> 'r case
-  val json : status:int -> description:string -> 'a Codec.t -> ('r, 'a) Prism.t -> 'r case
+  val empty : status:int -> ?description:string -> ('r, unit) Prism.t -> 'r case
+  val json : status:int -> ?description:string -> 'a Codec.t -> ('r, 'a) Prism.t -> 'r case
 
   val json_with_headers :
     status:int ->
-    description:string ->
+    ?description:string ->
     ?headers:(string * string) list ->
     'a Codec.t ->
     ('r, (string * string) list * 'a) Prism.t ->
@@ -308,14 +311,14 @@ module Response : sig
       taken out of the result with the value, the client gets back every header it received.
       [headers] documents header names with their descriptions. *)
 
-  val unspecified_json : status:int -> description:string -> ('r, Yojson.Safe.t) Prism.t -> 'r case
+  val unspecified_json : status:int -> ?description:string -> ('r, Yojson.Safe.t) Prism.t -> 'r case
   (** Sends JSON without documenting a schema. *)
 
   val raw :
-    status:int -> description:string -> ('r, (string * string) list * string) Prism.t -> 'r case
+    status:int -> ?description:string -> ('r, (string * string) list * string) Prism.t -> 'r case
   (** The handler decides the headers and the body (a download, say). No content is documented. *)
 
-  val outside : status:int -> description:string -> 'r case
+  val outside : ?description:string -> status:int -> unit -> 'r case
   (** Documents a response that does not go through the endpoint (one from the router, the
       adapter or the application's catch-all); a provider declares its own replies in
       [responses]. The client cannot decode it. A status declared only by such cases is
@@ -347,8 +350,8 @@ val make :
   string ->
   ?hidden:bool ->
   ?headers:header list ->
-  tags:string list ->
-  summary:string ->
+  ?tags:string list ->
+  ?summary:string ->
   ?description:string ->
   ('q, 'q, Provide.body_unread, _) Provide.t ->
   responses:'r Response.case list ->
@@ -357,7 +360,8 @@ val make :
     segments must be exactly the path parameters the provider declares and [responses] must not be
     empty, else [Invalid_argument].
     [responses] are matched in declaration order and documented in status order. A [hidden]
-    endpoint is left out of the OpenAPI document. *)
+    endpoint is left out of the OpenAPI document. [tags], [summary] and [description] are
+    documented when given. *)
 
 val meth : _ t -> meth
 val template : _ t -> string

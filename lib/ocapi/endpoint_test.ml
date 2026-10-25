@@ -180,7 +180,7 @@ let test_openapi_operation () =
       ~responses:
         Ocapi.Endpoint.Response.
           [
-            outside ~status:500 ~description:"internal";
+            outside ~status:500 ~description:"internal" ();
             echo;
             json ~status:200 ~description:"ignored" other Ocapi.Endpoint.Prism.id;
           ]
@@ -296,8 +296,8 @@ let test_responses_from_providers_and_transport () =
           Ocapi.Endpoint.Response.
             [
               echo;
-              outside ~status:200 ~description:"outside";
-              outside ~status:500 ~description:"outside";
+              outside ~status:200 ~description:"outside" ();
+              outside ~status:500 ~description:"outside" ();
             ]));
   let with_body =
     let+ _ = rejecting
@@ -714,6 +714,29 @@ let test_openapi_document () =
     |> Yojson.Safe.Util.member "components"
     |> Yojson.Safe.to_string)
 
+(* What the caller leaves out is left out of the document, except the description of a response,
+   which OpenAPI requires: the reason phrase stands in. An unnamed schema is written inline. *)
+let test_optional_documentation () =
+  let open Ocapi.Endpoint in
+  let inline = Codec.make ~schema:string_schema (fun s -> `String s) Yojson.Safe.Util.to_string in
+  let e =
+    make ~meth:`GET "/bare/{id}"
+      (let+ id = Path.string "id" Fun.id in
+       id)
+      ~responses:
+        Response.
+          [
+            json ~status:200 inline Prism.ok; empty ~status:404 Prism.error; outside ~status:599 ();
+          ]
+  in
+  Alcotest.(check string)
+    "operation"
+    ({|{"parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],|}
+   ^ {|"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"string"}}}},|}
+   ^ {|"404":{"description":"Not Found"},"599":{"description":"Status 599"}}}|})
+    (Yojson.Safe.to_string (Openapi.operation e));
+  Alcotest.(check (list string)) "no components" [] (Openapi.schemas [ e ] |> List.map fst)
+
 let () =
   Alcotest.run "endpoint"
     [
@@ -759,5 +782,6 @@ let () =
           Alcotest.test_case "security requirements" `Quick test_security_requirements;
           Alcotest.test_case "responses from providers and transport" `Quick
             test_responses_from_providers_and_transport;
+          Alcotest.test_case "optional documentation" `Quick test_optional_documentation;
         ] );
     ]
