@@ -675,6 +675,48 @@ let make ~meth template ?(hidden = false) ?(headers = []) ?(tags = []) ?summary 
     responses;
   }
 
+module type SPEC = sig
+  type request
+  type result
+  type body
+  type doc
+
+  val meth : meth
+  val path : string
+  val hidden : bool
+  val headers : header list
+  val tags : string list
+  val summary : string option
+  val description : string option
+  val operation_id : string option
+  val provide : (request, request, Provide.body_unread, body, doc) Provide.t
+  val responses : (result, doc) Response.case list
+end
+
+module Defaults = struct
+  let hidden = false
+  let headers = []
+  let tags = []
+  let summary = None
+  let description = None
+  let operation_id = None
+end
+
+module type S = sig
+  type request
+  type result
+  type doc
+
+  val endpoint : (request, result, doc) t
+end
+
+module Make (Spec : SPEC) = struct
+  let endpoint =
+    make ~meth:Spec.meth Spec.path ~hidden:Spec.hidden ~headers:Spec.headers ~tags:Spec.tags
+      ?summary:Spec.summary ?description:Spec.description ?operation_id:Spec.operation_id
+      Spec.provide ~responses:Spec.responses
+end
+
 let meth t = t.meth
 let template t = t.template
 

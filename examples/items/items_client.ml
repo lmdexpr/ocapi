@@ -1,3 +1,3 @@
-let list ?limit () = Ocapi.Client.call Items_api.Index.endpoint { limit }
-let get id = Ocapi.Client.call Items_api.Get.endpoint { id }
-let create name = Ocapi.Client.call Items_api.Create.endpoint { name }
+let list ?limit () = Ocapi.Client.invoke (module Items_api.Index) { limit }
+let get id = Ocapi.Client.invoke (module Items_api.Get) { id }
+let create name = Ocapi.Client.invoke (module Items_api.Create) { name }

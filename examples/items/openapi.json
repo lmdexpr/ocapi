@@ -6,6 +6,7 @@
       "get": {
         "tags": [ "Item" ],
         "summary": "Items",
+        "operationId": "listItems",
         "parameters": [
           {
             "name": "limit",
@@ -38,6 +39,7 @@
       "post": {
         "tags": [ "Item" ],
         "summary": "Create an item",
+        "operationId": "createItem",
         "requestBody": {
           "required": true,
           "content": {
@@ -72,6 +74,7 @@
       "get": {
         "tags": [ "Item" ],
         "summary": "One item",
+        "operationId": "getItem",
         "parameters": [
           {
             "name": "id",

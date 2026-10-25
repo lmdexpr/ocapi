@@ -103,3 +103,7 @@ let call ?bearer endpoint q =
     | Error (`Malformed reason) -> Error (`Malformed (response, reason))
     | Error `Undeclared when response.status = 401 -> Error `Unauthorized
     | Error `Undeclared -> Error (`Undeclared response))
+
+let invoke (type q r) ?bearer (module E : Endpoint.S with type request = q and type result = r)
+  (q : q) =
+  call ?bearer E.endpoint q

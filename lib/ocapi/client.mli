@@ -59,3 +59,10 @@ val call : ?bearer:string -> ('q, 'r, _) Endpoint.t -> 'q -> ('r, [> error ]) re
 
 val header : string -> (string * string) list -> string option
 (** Case-insensitive lookup. *)
+
+val invoke :
+  ?bearer:string ->
+  (module Endpoint.S with type request = 'q and type result = 'r) ->
+  'q ->
+  ('r, [> error ]) result
+(** {!call} for an endpoint declared as a module: [invoke (module Get) { id }]. *)

@@ -445,6 +445,81 @@ val make :
     [operation_id] (the name generators give the call, unique in a document) are documented when
     given. *)
 
+(** {1 One endpoint, one module}
+
+    An endpoint declared as a module: its request and result types next to how they travel.
+    [Make] checks the declaration as {!make} does, when the module is defined:
+
+    {[
+      module Get = struct
+        module Spec = struct
+          type request = { id : string }
+          type nonrec result = (item, string) result
+          type body = Endpoint.Provide.body_unread
+          type doc = Endpoint.complete
+
+          include Endpoint.Defaults
+
+          let meth = `GET
+          let path = "/items/{id}"
+          let provide = ...
+          let responses = ...
+        end
+
+        include Spec
+        include Endpoint.Make (Spec)
+      end
+    ]}
+
+    [Spec] is named because a functor applied to an anonymous structure cannot return the types
+    defined in it. The resulting module is an {!S}: [Server.route (module Get)] and
+    [Client.invoke (module Get)] take it whole. *)
+
+(** What {!Make} takes. [body] is the state of the request body after [provide]
+    ({!Provide.body_unread} when there is none); [doc] is {!complete} for an endpoint to document. *)
+module type SPEC = sig
+  type request
+  type result
+  type body
+  type doc
+
+  val meth : meth
+  val path : string
+  val hidden : bool
+  val headers : header list
+  val tags : string list
+  val summary : string option
+  val description : string option
+  val operation_id : string option
+  val provide : (request, request, Provide.body_unread, body, doc) Provide.t
+  val responses : (result, doc) Response.case list
+end
+
+(** The optional parts of a {!SPEC}, to [include] and override: not hidden, no headers, no tags,
+    no summary, description or operation id. *)
+module Defaults : sig
+  val hidden : bool
+  val headers : header list
+  val tags : string list
+  val summary : string option
+  val description : string option
+  val operation_id : string option
+end
+
+(** An endpoint with its request and result types. *)
+module type S = sig
+  type request
+  type result
+  type doc
+
+  val endpoint : (request, result, doc) t
+end
+
+module Make (Spec : SPEC) : sig
+  val endpoint : (Spec.request, Spec.result, Spec.doc) t
+  (** [Invalid_argument] as {!make}, when the functor is applied. *)
+end
+
 val meth : (_, _, _) t -> meth
 val template : (_, _, _) t -> string
 

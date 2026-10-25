@@ -499,6 +499,69 @@ let test_discriminators_are_checked () =
   refused "one value, two schemas" "the value x stands for two schemas"
     (make ~da:("kind", "x") ~db:("kind", "x"))
 
+module Greet = struct
+  module Spec = struct
+    type request = { name : string }
+    type nonrec result = (string, string) result
+    type body = Ocapi.Endpoint.Provide.body_unread
+    type doc = Ocapi.Endpoint.complete
+
+    include Ocapi.Endpoint.Defaults
+
+    let meth = `GET
+    let path = "/greet/{name}"
+    let operation_id = Some "greet"
+
+    let provide =
+      let+ name = Ocapi.Endpoint.Path.string "name" (fun r -> r.name) in
+      { name }
+
+    let responses =
+      Ocapi.Endpoint.
+        [
+          Response.json ~status:200 string_codec Prism.ok;
+          Response.json ~status:404 string_codec Prism.error;
+        ]
+  end
+
+  include Spec
+  include Ocapi.Endpoint.Make (Spec)
+end
+
+(* A module made with [Make] is routed and called whole, the request record in its own module. *)
+let test_one_endpoint_one_module () =
+  let routes =
+    [
+      Ocapi.Server.route
+        (module Greet)
+        (fun { name } -> if name = "nobody" then Error "unknown" else Ok ("hello " ^ name));
+    ]
+  in
+  let send (r : Ocapi.Client.request) : Ocapi.Client.response =
+    let reply =
+      Ocapi.Server.serve routes
+        { (request ~meth:r.meth ~query:r.query r.path) with header = (fun _ -> None) }
+    in
+    let body =
+      match reply.body with Json j -> Yojson.Safe.to_string j | Empty -> "" | Raw s -> s
+    in
+    { status = reply.status; headers = reply.headers; body }
+  in
+  let call name =
+    try Ocapi.Client.invoke (module Greet) { name }
+    with effect Ocapi.Client.Send r, k -> Effect.Deep.continue k (send r)
+  in
+  Alcotest.(check bool) "ok" true (call "alice" = Ok (Ok "hello alice"));
+  Alcotest.(check bool) "error" true (call "nobody" = Ok (Error "unknown"));
+  Alcotest.check_raises "checked when applied"
+    (Invalid_argument "path parameters of /greet do not match its template") (fun () ->
+    let module Bad = Ocapi.Endpoint.Make (struct
+      include Greet.Spec
+
+      let path = "/greet"
+    end) in
+    ignore Bad.endpoint)
+
 let () =
   Alcotest.run "endpoint"
     [
@@ -508,6 +571,7 @@ let () =
             test_template_must_match_the_path_parameters;
           Alcotest.test_case "at least one response" `Quick test_at_least_one_response;
           Alcotest.test_case "templates are checked" `Quick test_templates_are_checked;
+          Alcotest.test_case "one endpoint, one module" `Quick test_one_endpoint_one_module;
           Alcotest.test_case "discriminators are checked" `Quick test_discriminators_are_checked;
         ] );
       ( "provide",
