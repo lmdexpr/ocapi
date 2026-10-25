@@ -1,6 +1,6 @@
-File "./schemaless.ml.in", line 10, characters 41-42:
-10 | let _ = Ocapi.Endpoint.Openapi.operation e
-                                              ^
+File "./meta.ml.in", line 10, characters 40-41:
+10 | let _ = Ocapi.Endpoint.Meta.of_endpoint e
+                                             ^
 Error: The value e has type
          (unit, unit, Ocapi.Endpoint.schemaless) Ocapi.Endpoint.t
        but an expression was expected of type

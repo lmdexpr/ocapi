@@ -2,7 +2,7 @@
  (name ocapi_jsonschema)
  (public_name ocapi-jsonschema)
  (modules ocapi_jsonschema)
- (libraries ocapi yojson ppx_deriving_jsonschema.runtime))
+ (libraries ocapi ocapi-openapi yojson ppx_deriving_jsonschema.runtime))
 
 (test
  (name ocapi_jsonschema_test)
@@ -13,6 +13,7 @@
  (libraries
   ocapi
   ocapi-jsonschema
+  ocapi-openapi
   ppx_deriving_jsonschema.runtime
   alcotest
   str

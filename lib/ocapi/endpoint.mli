@@ -1,6 +1,6 @@
 (** An HTTP endpoint as a value: method, path template, the values it takes from a request and
-    the responses it can give. The server routing ([Server]), the client request
-    ([Client]) and the OpenAPI document ({!Openapi}) are derived from that value.
+    the responses it can give. The server routing ([Server]), the client request ([Client]) and,
+    through {!Meta}, the OpenAPI document ([Ocapi_openapi]) are derived from that value.
 
     The only dependency is yojson; no HTTP library is involved. Schemas are plain
     [Yojson.Safe.t], so any generator can supply them.
@@ -21,8 +21,9 @@ val meth_to_string : meth -> string
     whether every part of it has a schema. A part built with a schema leaves the parameter
     polymorphic; a part without one ({!Codec.custom}, {!Value.custom},
     {!Response.unspecified_json}) fixes it to {!schemaless}, and so does everything it is combined
-    into. The OpenAPI document takes only {!complete} endpoints. Nothing needs annotating: the
-    parameter is inferred, and a type error points at the part without a schema. *)
+    into. The OpenAPI document ([Ocapi_openapi]) takes only {!complete} endpoints. Nothing needs
+    annotating: the parameter is inferred, and a type error points at the part without a
+    schema. *)
 
 type schemaless
 (** Some part has no schema. *)
@@ -124,7 +125,16 @@ module Provide : sig
       {!both} chains the states and {!Endpoint.make} starts from {!body_unread}, an endpoint that
       would read its body twice does not compile. *)
 
-  type parameter
+  type parameter = private {
+    name : string;
+    in_ : [ `Path | `Query | `Header | `Cookie ];
+    required : bool;
+    description : string option;
+    schema : Yojson.Safe.t;
+    example : Yojson.Safe.t option;
+  }
+  (** What a provider documents of a path, query, header or cookie value; built with
+      {!val-parameter}. *)
 
   val parameter :
     in_:[ `Path | `Query | `Header | `Cookie ] ->
@@ -440,54 +450,59 @@ val decode :
 (** The result a response stands for: the first case of its status that decodes it. [`Undeclared]
     when no case of the status can, [`Malformed] with the reason when the body does not decode. *)
 
-(** The OpenAPI 3 document pieces an endpoint contributes. *)
-module Openapi : sig
-  type ('a, 'r, 'd) endpoint := ('a, 'r, 'd) t
+type common = {
+  status : int;
+  description : string;
+  scope : [ `Every_operation | `Operations_with_body ];
+}
+(** A response given outside the endpoints, by the transport for instance, to document on every
+    operation or on those with a request body. *)
 
-  (** Endpoints of any types, written as a list literal: [Openapi.document ~info [ get; post ]]
-      where an {!Endpoints.t} is expected, or [Openapi.Endpoints.[ get; post ]] anywhere else.
-      Without either, the literal is an ordinary list and endpoints of different types do not fit
-      in it. *)
-  module Endpoints : sig
-    type t = [] : t | ( :: ) : (_, _, complete) endpoint * t -> t
+(** What a {!complete} endpoint declares, as plain data: what a document generator such as
+    [Ocapi_openapi] reads. Nothing here sends or receives. *)
+module Meta : sig
+  type schema = { name : string option; schema : Yojson.Safe.t }
+  (** A named schema belongs in the components; an unnamed one is written where it is used. *)
 
-    val append : t -> t -> t
-  end
-
-  val component_name : string -> string
-  (** The components name (PascalCase) of a schema name (snake_case). *)
-
-  type common = {
-    status : int;
-    description : string;
-    scope : [ `Every_operation | `Operations_with_body ];
+  type parameter = Provide.parameter = private {
+    name : string;
+    in_ : [ `Path | `Query | `Header | `Cookie ];
+    required : bool;
+    description : string option;
+    schema : Yojson.Safe.t;
+    example : Yojson.Safe.t option;
   }
-  (** A response given outside the endpoints, by the transport for instance, documented on every
-      operation or on those with a request body. *)
 
-  val operation : ?common:common list -> (_, _, complete) t -> Yojson.Safe.t
-  (** The responses of one status are documented from the endpoint's cases first, then from what
-      its providers declare, then from [common]. *)
+  type body = { schema : schema; content_type : string }
 
-  val schemas : Endpoints.t -> (string * Yojson.Safe.t) list
-  (** The schemas the endpoints refer to in their request bodies and responses, in order of
-      appearance, without duplicates. Hidden endpoints are left out. [Invalid_argument] when one
-      name is declared with two different schemas. *)
+  type case = {
+    status : int;
+    description : string option;
+    content : schema option;  (** The JSON body's schema; [None] for no documented body. *)
+    headers : (string * string) list;  (** Names and descriptions of headers chosen per response. *)
+    outside : bool;  (** Declared by {!Response.outside}: not sent through the endpoint. *)
+  }
 
-  val paths : ?common:common list -> Endpoints.t -> (string * Yojson.Safe.t) list
-  (** One path item per path template; endpoints with the same template share an item. Hidden
-      endpoints are left out. *)
+  type endpoint = {
+    meth : meth;
+    template : string;
+    segments : [ `Lit of string | `Param of string ] list;
+    hidden : bool;
+    headers : header list;
+    tags : string list;
+    summary : string option;
+    description : string option;
+    security : string list list;
+      (** One list of alternative scheme names per provider; every provider must be satisfied. *)
+    parameters : parameter list;  (** In provider order. *)
+    request_body : body option;
+    responses : (int * string option) list;
+      (** The replies the providers declare ({!Provide.require} and the like). *)
+    rejections : (int * schema) list;  (** The bodies of those replies, by status. *)
+    cases : case list;  (** In declaration order. *)
+  }
 
-  val document :
-    ?servers:Yojson.Safe.t list ->
-    ?tags:Yojson.Safe.t list ->
-    ?security_schemes:(string * Yojson.Safe.t) list ->
-    ?common:common list ->
-    ?schemas:(string * Yojson.Safe.t) list ->
-    info:Yojson.Safe.t ->
-    Endpoints.t ->
-    Yojson.Safe.t
-  (** An OpenAPI 3.1 document: [info], {!paths} and, under [components], {!val-schemas} and the
-      [schemas] given (snake_case names, shared definitions the others refer to, say) by their
-      {!component_name}, and the [security_schemes] as given. *)
+  val of_endpoint : (_, _, complete) t -> endpoint
+  (** Only {!complete} endpoints: a part without a schema would read as the empty schema, which
+      accepts anything, and a body sent with {!Response.unspecified_json} as no body at all. *)
 end

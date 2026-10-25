@@ -4,9 +4,10 @@ Declare an HTTP endpoint once in OCaml, derive the server, the client and the Op
 
 | Package | Module |
 | --- | --- |
-| `ocapi` | `Ocapi.Endpoint`: method, path, parameters, body, responses; OpenAPI pieces |
+| `ocapi` | `Ocapi.Endpoint`: method, path, parameters, body, responses; `Endpoint.Meta` to read them |
 | | `Ocapi.Server`: routes and dispatch, `Request.t -> Reply.t` |
 | | `Ocapi.Client`: calls with a request, decodes the result; the `Send` effect |
+| `ocapi-openapi` | `Ocapi_openapi`: the OpenAPI 3.1 document |
 | `ocapi-cohttp-eio` | `Ocapi_cohttp_eio.Server`, `Ocapi_cohttp_eio.Client` |
 | `ocapi-jsonschema` | `Ocapi_jsonschema`: schemas from `ppx_deriving_jsonschema` |
 
@@ -25,6 +26,7 @@ Declare an HTTP endpoint once in OCaml, derive the server, the client and the Op
 
 ```sh
 opam pin add ocapi https://github.com/lmdexpr/ocapi.git
+opam pin add ocapi-openapi https://github.com/lmdexpr/ocapi.git
 opam pin add ocapi-cohttp-eio https://github.com/lmdexpr/ocapi.git
 opam pin add ocapi-jsonschema https://github.com/lmdexpr/ocapi.git
 ```
@@ -118,7 +120,7 @@ Effects do not cross fibers: call `run` inside each fiber that sends.
 
 ```ocaml
 let openapi =
-  Endpoint.Openapi.document
+  Ocapi_openapi.document
     ~info:(`Assoc [ "title", `String "Items"; "version", `String "1.0.0" ])
     ~common:Ocapi_cohttp_eio.Server.common
     [ get ]
@@ -126,7 +128,13 @@ let openapi =
 
 Besides the cases of each endpoint, the document shows what providers declare
 (`Provide.require_json` with its schema, `Provide.require ~responses`) and what the transport
-answers (`~common`).
+answers (`~common`). Descriptions, summaries, tags and codec names are optional: what is left out
+is left out of the document, a response without a description gets the reason phrase of its
+status, and a codec without a name is written inline.
+
+The document takes only endpoints whose every part has a schema. `Codec.custom`,
+`Value.custom` and `Response.unspecified_json` make parts without one: such an endpoint serves
+and calls as any other, but passing it to `Ocapi_openapi` is a type error.
 
 With `ppx_deriving_jsonschema` (and `ppx_yojson_conv` for the codec):
 

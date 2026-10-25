@@ -7,4 +7,4 @@ let e =
           Ocapi.Endpoint.Prism.id;
       ]
 
-let _ = Ocapi.Endpoint.Openapi.operation e
+let _ = Ocapi_openapi.operation e

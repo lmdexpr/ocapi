@@ -1,0 +1,54 @@
+; An endpoint with a part without a schema does not compile into the document.
+
+(rule
+ (deps
+  (glob_files %{project_root}/lib/ocapi/.ocapi.objs/byte/*.cmi)
+  (glob_files ../../.ocapi_openapi.objs/byte/*.cmi))
+ (action
+  (with-outputs-to
+   schemaless.actual
+   (with-accepted-exit-codes
+    2
+    (run
+     %{ocamlc}
+     -I
+     %{project_root}/lib/ocapi/.ocapi.objs/byte
+     -I
+     ../../.ocapi_openapi.objs/byte
+     -c
+     -o
+     schemaless.cmo
+     -impl
+     %{dep:schemaless.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-openapi)
+ (action
+  (diff schemaless.expected schemaless.actual)))
+
+; Nor into the plain data that generators read.
+
+(rule
+ (deps
+  (glob_files %{project_root}/lib/ocapi/.ocapi.objs/byte/*.cmi))
+ (action
+  (with-outputs-to
+   meta.actual
+   (with-accepted-exit-codes
+    2
+    (run
+     %{ocamlc}
+     -I
+     %{project_root}/lib/ocapi/.ocapi.objs/byte
+     -c
+     -o
+     meta.cmo
+     -impl
+     %{dep:meta.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-openapi)
+ (action
+  (diff meta.expected meta.actual)))

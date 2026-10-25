@@ -69,7 +69,7 @@ val run :
     Run behind a proxy that limits headers and times out slow clients, and bound connections with
     [max_connections]. *)
 
-val common : Ocapi.Endpoint.Openapi.common list
-(** The responses {!run} gives outside the endpoints, for [Ocapi.Endpoint.Openapi.document
+val common : Ocapi.Endpoint.common list
+(** The responses {!run} gives outside the endpoints, for [Ocapi_openapi.document
     ~common]: the 400 of {!draining}, the 413 of a body over the limit and the 500 of the default
     [on_exception]. *)

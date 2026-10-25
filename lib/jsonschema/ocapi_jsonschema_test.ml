@@ -40,7 +40,7 @@ let endpoint =
         ]
 
 let document =
-  Ocapi.Endpoint.Openapi.document ~info:(`Assoc [])
+  Ocapi_openapi.document ~info:(`Assoc [])
     ~schemas:(Ocapi_jsonschema.components definitions)
     [ endpoint ]
 

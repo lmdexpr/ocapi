@@ -86,5 +86,3 @@ module Create = struct
     in
     { name }
 end
-
-let endpoints = Endpoint.Openapi.Endpoints.[ Index.endpoint; Get.endpoint; Create.endpoint ]

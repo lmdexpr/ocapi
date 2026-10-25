@@ -23,5 +23,3 @@ module Create : sig
 
   val endpoint : (request, item, Ocapi.Endpoint.complete) Ocapi.Endpoint.t
 end
-
-val endpoints : Ocapi.Endpoint.Openapi.Endpoints.t

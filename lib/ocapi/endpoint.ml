@@ -639,361 +639,91 @@ let decode t ~status ~headers body =
     | Produced _ | Outside -> None)
   |> first
 
-module Openapi = struct
-  type ('a, 'r, 'd) endpoint = ('a, 'r, 'd) t
+type common = {
+  status : int;
+  description : string;
+  scope : [ `Every_operation | `Operations_with_body ];
+}
 
-  module Endpoints = struct
-    type t = [] : t | ( :: ) : (_, _, complete) endpoint * t -> t
+module Meta = struct
+  type schema = { name : string option; schema : Yojson.Safe.t }
 
-    let rec append a b = match a with [] -> b | e :: rest -> e :: append rest b
-  end
-
-  type packed = Packed : (_, _, _) t -> packed
-
-  let rec packed = function Endpoints.[] -> [] | Endpoints.(e :: rest) -> Packed e :: packed rest
-
-  let pascal name =
-    name |> String.split_on_char '_' |> List.map String.capitalize_ascii |> String.concat ""
-
-  (* A named schema is a component; an unnamed one is written where it is used. *)
-  let schema_ref (name, schema) =
-    match name with
-    | Some name -> `Assoc [ "$ref", `String ("#/components/schemas/" ^ pascal name) ]
-    | None -> schema
-
-  let content ?(media = "application/json") schema = `Assoc [ media, `Assoc [ "schema", schema ] ]
-  let component_name = pascal
-  let optional key = Option.fold ~none:[] ~some:(fun v -> [ key, v ])
-  let described = Option.map (fun d -> `String d)
-
-  (* The description of a response is required: without one of the caller's, the reason phrase. *)
-  let reason_phrase status =
-    match status with
-    | 100 -> "Continue"
-    | 101 -> "Switching Protocols"
-    | 200 -> "OK"
-    | 201 -> "Created"
-    | 202 -> "Accepted"
-    | 203 -> "Non-Authoritative Information"
-    | 204 -> "No Content"
-    | 205 -> "Reset Content"
-    | 206 -> "Partial Content"
-    | 300 -> "Multiple Choices"
-    | 301 -> "Moved Permanently"
-    | 302 -> "Found"
-    | 303 -> "See Other"
-    | 304 -> "Not Modified"
-    | 307 -> "Temporary Redirect"
-    | 308 -> "Permanent Redirect"
-    | 400 -> "Bad Request"
-    | 401 -> "Unauthorized"
-    | 402 -> "Payment Required"
-    | 403 -> "Forbidden"
-    | 404 -> "Not Found"
-    | 405 -> "Method Not Allowed"
-    | 406 -> "Not Acceptable"
-    | 407 -> "Proxy Authentication Required"
-    | 408 -> "Request Timeout"
-    | 409 -> "Conflict"
-    | 410 -> "Gone"
-    | 411 -> "Length Required"
-    | 412 -> "Precondition Failed"
-    | 413 -> "Content Too Large"
-    | 414 -> "URI Too Long"
-    | 415 -> "Unsupported Media Type"
-    | 416 -> "Range Not Satisfiable"
-    | 417 -> "Expectation Failed"
-    | 421 -> "Misdirected Request"
-    | 422 -> "Unprocessable Content"
-    | 425 -> "Too Early"
-    | 426 -> "Upgrade Required"
-    | 428 -> "Precondition Required"
-    | 429 -> "Too Many Requests"
-    | 431 -> "Request Header Fields Too Large"
-    | 451 -> "Unavailable For Legal Reasons"
-    | 500 -> "Internal Server Error"
-    | 501 -> "Not Implemented"
-    | 502 -> "Bad Gateway"
-    | 503 -> "Service Unavailable"
-    | 504 -> "Gateway Timeout"
-    | 505 -> "HTTP Version Not Supported"
-    | 511 -> "Network Authentication Required"
-    | status -> "Status " ^ string_of_int status
-
-  let description status d = `String (Option.value d ~default:(reason_phrase status))
-
-  let parameter (p : Provide.parameter) =
-    `Assoc
-      ([
-         "name", `String p.name;
-         ( "in",
-           `String
-             (match p.in_ with
-             | `Path -> "path"
-             | `Query -> "query"
-             | `Header -> "header"
-             | `Cookie -> "cookie") );
-         "required", `Bool p.required;
-       ]
-      @ optional "description" (described p.description)
-      @ [ "schema", p.schema ]
-      @ optional "example" p.example)
-
-  (* Path parameters first, in template order; then query parameters in provider order. *)
-  let parameters endpoint =
-    let path, query =
-      endpoint.provide.parameters |> List.partition (fun (p : Provide.parameter) -> p.in_ = `Path)
-    in
-    let position (p : Provide.parameter) =
-      endpoint.segments
-      |> List.mapi (fun i s -> i, s)
-      |> List.find_map (fun (i, s) -> if s = Param p.name then Some i else None)
-    in
-    List.sort (fun a b -> compare (position a) (position b)) path @ query |> List.map parameter
-
-  let headers_of ~endpoint_headers ?(cases = []) endpoint =
-    match
-      (if endpoint_headers then
-         endpoint.headers
-         |> List.filter_map (fun (h : header) -> Option.map (fun d -> h.name, d) h.description)
-       else
-         [])
-      @ List.concat_map
-          (fun (c : (_, _) Response.case) ->
-            match c.origin with Produced p -> p.documented_headers | Outside -> [])
-          cases
-      |> List.fold_left
-           (fun acc (name, d) -> if List.mem_assoc name acc then acc else acc @ [ name, d ])
-           []
-    with
-    | [] -> []
-    | documented ->
-      [
-        ( "headers",
-          `Assoc
-            (documented
-            |> List.map @@ fun (name, description) ->
-               ( name,
-                 `Assoc
-                   [
-                     "description", `String description;
-                     "schema", `Assoc [ "type", `String "string" ];
-                   ] )) );
-      ]
-
-  type common = {
-    status : int;
-    description : string;
-    scope : [ `Every_operation | `Operations_with_body ];
+  type parameter = Provide.parameter = {
+    name : string;
+    in_ : [ `Path | `Query | `Header | `Cookie ];
+    required : bool;
+    description : string option;
+    schema : Yojson.Safe.t;
+    example : Yojson.Safe.t option;
   }
 
-  (* What the handler's cases declare wins over what the providers declare, which wins over what
-     the transport declares: the more specific source of one status. Its description is the first
-     one written, in the same order, so that a case or provider left undescribed does not hide the
-     description another one gives. *)
-  let responses ~common endpoint =
-    let declared =
-      endpoint.responses
-      |> List.map (fun (c : (_, _) Response.case) -> c.status)
-      |> List.sort_uniq compare
-    in
-    let transport_all =
-      common
-      |> List.filter_map (fun c ->
-        match c.scope with
-        | `Every_operation -> Some (c.status, Some c.description)
-        | `Operations_with_body ->
-          Option.map (fun _ -> c.status, Some c.description) endpoint.provide.request_body)
-    in
-    let descriptions =
-      List.map (fun (c : _ Response.case) -> c.status, c.description) endpoint.responses
-      @ endpoint.provide.responses @ transport_all
-    in
-    let description_of status =
-      descriptions
-      |> List.find_map (fun (s, d) -> if s = status then d else None)
-      |> description status
-    in
-    let unless_known known statuses =
-      statuses
-      |> List.fold_left
-           (fun acc status ->
-             if List.mem status known || List.mem status acc then acc else acc @ [ status ])
-           []
-    in
-    let provided = endpoint.provide.responses |> List.map fst |> unless_known declared in
-    let transport = transport_all |> List.map fst |> unless_known (declared @ provided) in
-    let described ~headers status =
-      let content =
-        List.assoc_opt status endpoint.provide.rejections
-        |> Option.fold ~none:[] ~some:(fun named -> [ "content", content (schema_ref named) ])
-      in
-      ( status,
-        ( string_of_int status,
-          `Assoc
-            (("description", description_of status)
-             :: headers_of ~endpoint_headers:headers endpoint
-            @ content) ) )
-    in
-    (* Several cases with one status: the schemas as a oneOf in declaration order. *)
-    let document status =
-      let cases =
-        endpoint.responses |> List.filter (fun (c : (_, _) Response.case) -> c.status = status)
-      in
-      let schemas =
-        cases
-        |> List.filter_map (fun (c : (_, _) Response.case) ->
-          match c.origin with
-          | Produced { content = Schema (name, schema); _ } -> Some (schema_ref (name, schema))
-          | Produced { content = No_content; _ } | Outside -> None)
-        |> List.fold_left (fun acc s -> if List.mem s acc then acc else acc @ [ s ]) []
-      in
-      let content =
-        match schemas with
-        | [] -> []
-        | [ schema ] -> [ "content", content schema ]
-        | schemas -> [ "content", content (`Assoc [ "oneOf", `List schemas ]) ]
-      in
-      (* The endpoint headers go out through [reply] and [resolve] only: a status that only
-         [outside] cases declare never carries them. *)
-      let endpoint_headers =
-        List.exists
-          (fun (c : (_, _) Response.case) ->
-            match c.origin with Produced _ -> true | Outside -> false)
-          cases
-      in
-      let rest = headers_of ~endpoint_headers ~cases endpoint @ content in
-      status, (string_of_int status, `Assoc (("description", description_of status) :: rest))
-    in
-    `Assoc
-      (List.map document declared
-       @ List.map (described ~headers:true) provided
-       @ List.map (described ~headers:false) transport
-      |> List.sort (fun (a, _) (b, _) -> compare a b)
-      |> List.map snd)
+  type body = { schema : schema; content_type : string }
 
-  let operation ?(common = []) endpoint =
-    (* Each provider's schemes are alternatives, and every provider must be satisfied: one
-       requirement object per choice of a scheme from each. *)
-    let security =
-      let requirements =
-        endpoint.provide.security
-        |> List.fold_left
-             (fun choices alternatives ->
-               choices
-               |> List.concat_map @@ fun chosen ->
-                  alternatives
-                  |> List.map @@ fun scheme ->
-                     if List.mem scheme chosen then chosen else chosen @ [ scheme ])
-             [ [] ]
-        |> List.sort_uniq compare
-      in
-      match requirements with
-      | [ [] ] -> []
-      | requirements ->
-        [
-          ( "security",
-            `List
-              (requirements
-              |> List.map @@ fun schemes -> `Assoc (List.map (fun s -> s, `List []) schemes)) );
-        ]
-    in
-    let request =
-      endpoint.provide.request_body
-      |> Option.map (fun ({ name; schema; content_type } : Provide.body) ->
-        `Assoc
-          [
-            "required", `Bool true;
-            "content", content ~media:content_type (schema_ref (name, schema));
-          ])
-      |> optional "requestBody"
-    in
-    let parameters = match parameters endpoint with [] -> [] | ps -> [ "parameters", `List ps ] in
-    let tags =
-      match endpoint.tags with
-      | [] -> []
-      | tags -> [ "tags", `List (List.map (fun t -> `String t) tags) ]
-    in
-    `Assoc
-      (tags
-      @ optional "summary" (described endpoint.summary)
-      @ optional "description" (described endpoint.description)
-      @ security @ request @ parameters
-      @ [ "responses", responses ~common endpoint ])
+  type case = {
+    status : int;
+    description : string option;
+    content : schema option;
+    headers : (string * string) list;
+    outside : bool;
+  }
 
-  (* One name with two schemas is a bug: stop rather than silently pick one. *)
-  (* Names meet as components names, so [foo_bar] and [foo__bar] are one name. *)
-  let add acc (name, schema) =
-    match List.find_opt (fun (known, _) -> pascal known = pascal name) acc with
-    | None -> acc @ [ name, schema ]
-    | Some (_, known) when Yojson.Safe.equal known schema -> acc
-    | Some (known, _) when known = name ->
-      invalid_arg ("schema " ^ name ^ " is declared with two different schemas")
-    | Some (known, _) ->
-      invalid_arg
-        ("schemas " ^ known ^ " and " ^ name ^ " are both " ^ pascal name
-       ^ " in the components, with different schemas")
+  type endpoint = {
+    meth : meth;
+    template : string;
+    segments : [ `Lit of string | `Param of string ] list;
+    hidden : bool;
+    headers : header list;
+    tags : string list;
+    summary : string option;
+    description : string option;
+    security : string list list;
+    parameters : parameter list;
+    request_body : body option;
+    responses : (int * string option) list;
+    rejections : (int * schema) list;
+    cases : case list;
+  }
 
-  let schemas endpoints =
-    packed endpoints
-    |> List.filter (fun (Packed e) -> not e.hidden)
-    |> List.concat_map (fun (Packed e) ->
-      (e.provide.request_body
-      |> Option.map (fun ({ name; schema; _ } : Provide.body) -> name, schema)
-      |> Option.to_list)
-      @ List.map snd e.provide.rejections
-      @ List.filter_map
-          (fun (c : (_, _) Response.case) ->
-            match c.origin with
-            | Produced { content = Schema (name, schema); _ } -> Some (name, schema)
-            | Produced { content = No_content; _ } | Outside -> None)
-          e.responses)
-    (* Unnamed schemas are written inline, not as components. *)
-    |> List.filter_map (fun (name, schema) -> Option.map (fun name -> name, schema) name)
-    |> List.fold_left add []
+  let schema (name, schema) = { name; schema }
 
-  (* OpenAPI forbids two operations of one method on a path, and two paths that differ only in the
-     names of their parameters. The router would also only ever reach the first. *)
-  let check_unique endpoints =
-    let shape e = e.segments |> List.map (function Lit s -> s | Param _ -> "{}") in
-    endpoints
-    |> List.fold_left
-         (fun seen (Packed e) ->
-           seen
-           |> List.iter (fun (Packed known) ->
-             if shape known = shape e && known.template <> e.template then
-               invalid_arg ("paths " ^ known.template ^ " and " ^ e.template ^ " are the same path");
-             if known.template = e.template && known.meth = e.meth then
-               invalid_arg (meth_to_string e.meth ^ " " ^ e.template ^ " is declared twice"));
-           Packed e :: seen)
-         []
-    |> ignore
+  let case (c : (_, _) Response.case) =
+    match c.origin with
+    | Outside ->
+      {
+        status = c.status;
+        description = c.description;
+        content = None;
+        headers = [];
+        outside = true;
+      }
+    | Produced p ->
+      {
+        status = c.status;
+        description = c.description;
+        content =
+          (match p.content with Schema (name, s) -> Some (schema (name, s)) | No_content -> None);
+        headers = p.documented_headers;
+        outside = false;
+      }
 
-  let schemas_of = schemas
-
-  let paths ?common endpoints =
-    let visible = packed endpoints |> List.filter (fun (Packed e) -> not e.hidden) in
-    check_unique visible;
-    let ops =
-      visible
-      |> List.map @@ fun (Packed e) ->
-         e.template, (String.lowercase_ascii (meth_to_string e.meth), operation ?common e)
-    in
-    ops
-    |> List.fold_left (fun acc (t, _) -> if List.mem t acc then acc else t :: acc) []
-    |> List.rev
-    |> List.map @@ fun t ->
-       t, `Assoc (ops |> List.filter_map @@ fun (t', op) -> if t = t' then Some op else None)
-
-  let document ?servers ?tags ?security_schemes ?common ?(schemas = []) ~info endpoints =
-    let all = List.fold_left add (endpoints |> schemas_of) schemas in
-    let components =
-      Option.fold security_schemes ~none:[] ~some:(fun s -> [ "securitySchemes", `Assoc s ])
-      @ [ "schemas", `Assoc (all |> List.map @@ fun (name, schema) -> pascal name, schema) ]
-    in
-    `Assoc
-      ([ "openapi", `String "3.1.0"; "info", info ]
-      @ optional "servers" (Option.map (fun s -> `List s) servers)
-      @ optional "tags" (Option.map (fun t -> `List t) tags)
-      @ [ "paths", `Assoc (paths ?common endpoints); "components", `Assoc components ])
+  let of_endpoint (t : (_, _, complete) t) =
+    {
+      meth = t.meth;
+      template = t.template;
+      segments = t.segments |> List.map (function Lit s -> `Lit s | Param p -> `Param p);
+      hidden = t.hidden;
+      headers = t.headers;
+      tags = t.tags;
+      summary = t.summary;
+      description = t.description;
+      security = t.provide.security;
+      parameters = t.provide.parameters;
+      request_body =
+        t.provide.request_body
+        |> Option.map (fun ({ name; schema = s; content_type } : Provide.body) ->
+          { schema = schema (name, s); content_type });
+      responses = t.provide.responses;
+      rejections = t.provide.rejections |> List.map (fun (status, named) -> status, schema named);
+      cases = List.map case t.responses;
+    }
 end
