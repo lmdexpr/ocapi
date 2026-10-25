@@ -34,3 +34,6 @@ setup.log
 
 # Local OPAM switch
 _opam/
+
+# direnv cache (nix-direnv / use flake)
+.direnv/
