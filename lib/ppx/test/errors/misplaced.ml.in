@@ -1,0 +1,1 @@
+type request = { id : string [@status 200] } [@@deriving provide]

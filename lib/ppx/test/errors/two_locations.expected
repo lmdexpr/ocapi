@@ -1,0 +1,4 @@
+File "./two_locations.ml.in", line 1, characters 17-47:
+1 | type request = { id : string [@query] [@header] } [@@deriving provide]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: ocapi: id has more than one of path, query, header, cookie, body, provide

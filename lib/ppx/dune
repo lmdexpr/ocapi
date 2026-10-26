@@ -1,0 +1,17 @@
+(library
+ (name ocapi_ppx)
+ (public_name ocapi-ppx)
+ (kind ppx_deriver)
+ (modules
+  ocapi_ppx
+  attributes
+  doc
+  names
+  provide
+  responses
+  codec
+  odoc_markdown)
+ (ppx_runtime_libraries ocapi)
+ (libraries ppxlib odoc-parser)
+ (preprocess
+  (pps ppxlib.metaquot)))

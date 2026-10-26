@@ -1,0 +1,4 @@
+File "./misspelled_constructor.ml.in", line 1, characters 51-57:
+1 | type result = Found of item [@status 200] | Gone [@stauts 410] [@@deriving responses]
+                                                       ^^^^^^
+Error: ocapi: unknown attribute [@stauts]; did you mean [@status]?

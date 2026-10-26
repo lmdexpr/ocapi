@@ -1,0 +1,4 @@
+File "./not_in_template.ml.in", line 1, characters 17-36:
+1 | type request = { id : string [@path] } [@@deriving provide ~path:"/items"]
+                     ^^^^^^^^^^^^^^^^^^^
+Error: ocapi: id is not a parameter of the path template

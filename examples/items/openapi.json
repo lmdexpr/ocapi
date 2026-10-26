@@ -55,7 +55,13 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Item" }
               }
-            }
+            },
+            "x-ocapi-cases": [
+              {
+                "constructor": "Created",
+                "schema": { "$ref": "#/components/schemas/Item" }
+              }
+            ]
           },
           "400": {
             "description": "The body is not {\"name\": string}",
@@ -94,7 +100,7 @@
             },
             "x-ocapi-cases": [
               {
-                "constructor": "Ok",
+                "constructor": "Found",
                 "schema": { "$ref": "#/components/schemas/Item" }
               }
             ]
@@ -111,7 +117,7 @@
             },
             "x-ocapi-cases": [
               {
-                "constructor": "Error",
+                "constructor": "Not_found",
                 "schema": { "$ref": "#/components/schemas/Error" }
               }
             ]
@@ -126,31 +132,35 @@
       "Error": {
         "type": "object",
         "properties": { "error": { "type": "string" } },
-        "required": [ "error" ]
+        "required": [ "error" ],
+        "additionalProperties": false
       },
       "Items": {
         "type": "array",
         "items": {
           "type": "object",
           "properties": {
-            "id": { "type": "string" },
-            "name": { "type": "string" }
+            "name": { "type": "string" },
+            "id": { "type": "string" }
           },
-          "required": [ "id", "name" ]
+          "required": [ "name", "id" ],
+          "additionalProperties": false
         }
       },
       "Item": {
         "type": "object",
         "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" }
+          "name": { "type": "string" },
+          "id": { "type": "string" }
         },
-        "required": [ "id", "name" ]
+        "required": [ "name", "id" ],
+        "additionalProperties": false
       },
       "NewItem": {
         "type": "object",
         "properties": { "name": { "type": "string" } },
-        "required": [ "name" ]
+        "required": [ "name" ],
+        "additionalProperties": false
       }
     }
   }

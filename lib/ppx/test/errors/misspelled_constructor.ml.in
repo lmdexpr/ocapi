@@ -1,0 +1,1 @@
+type result = Found of item [@status 200] | Gone [@stauts 410] [@@deriving responses]

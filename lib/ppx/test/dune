@@ -1,0 +1,32 @@
+(test
+ (name ppx_test)
+ (package ocapi-ppx)
+ (modules ppx_test)
+ (preprocess
+  (pps ocapi-ppx ppx_deriving_jsonschema ppx_yojson_conv))
+ (libraries
+  ocapi
+  ocapi-openapi
+  ocapi-jsonschema
+  ppx_deriving_jsonschema.runtime
+  ppx_yojson_conv_lib
+  alcotest
+  yojson))
+
+; What the derivers expand to, and what they refuse, as the driver prints it.
+
+(executable
+ (name pp)
+ (modules pp)
+ (libraries ocapi-ppx ppxlib))
+
+(rule
+ (with-outputs-to
+  expansion.actual
+  (run ./pp.exe -impl %{dep:expansion.ml.in})))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff expansion.expected expansion.actual)))

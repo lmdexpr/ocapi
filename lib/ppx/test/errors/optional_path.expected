@@ -1,0 +1,4 @@
+File "./optional_path.ml.in", line 1, characters 17-35:
+1 | type request = { id : string option } [@@deriving provide ~path:"/items/{id}"]
+                     ^^^^^^^^^^^^^^^^^^
+Error: ocapi: the path parameter id cannot be optional

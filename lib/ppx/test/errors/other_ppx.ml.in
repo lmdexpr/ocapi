@@ -1,0 +1,2 @@
+(* Another ppx's attributes, and names far from ocapi's, are left alone. *)
+type request = { id : string [@key "ID"] [@jsonschema.format "uuid"] [@foo] } [@@deriving provide]

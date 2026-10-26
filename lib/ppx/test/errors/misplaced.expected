@@ -1,0 +1,4 @@
+File "./misplaced.ml.in", line 1, characters 31-37:
+1 | type request = { id : string [@status 200] } [@@deriving provide]
+                                   ^^^^^^
+Error: ocapi: [@status] does not apply to a field

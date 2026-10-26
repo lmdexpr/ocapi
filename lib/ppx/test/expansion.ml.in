@@ -1,0 +1,15 @@
+module Get = struct
+  module Spec = struct
+    (** One item
+
+        Returns the item with the given id. *)
+    type request = {
+      id : string;  (** Item id *)
+      limit : int option; [@reject Ocapi.Endpoint.Provide.require (fun _ -> Ocapi.Endpoint.Reply.empty 422)]
+      item : item; [@body]
+    }
+    [@@deriving provide ~path:"/items/{id}"]
+
+    type result = Found of item [@status 200] | Gone [@status 410] [@@deriving responses]
+  end
+end

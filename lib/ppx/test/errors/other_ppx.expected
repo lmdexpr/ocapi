@@ -1,0 +1,20 @@
+type request = {
+  id: string [@key "ID"][@jsonschema.format "uuid"][@foo ]}[@@deriving
+                                                             provide]
+include
+  struct
+    let _ = fun (_ : request) -> ()
+    type body = Ocapi.Endpoint.Provide.body_unread
+    type doc = Ocapi.Endpoint.complete
+    let provide =
+      let open Ocapi.Endpoint.Syntax in
+        let+ id =
+          (Ocapi.Endpoint.Query.required Ocapi.Endpoint.Value.string "id"
+             (fun (r : request) -> r.id))
+            |>
+            (Ocapi.Endpoint.Provide.require
+               ~responses:[(400, "id is missing or invalid")]
+               (fun _ -> Ocapi.Endpoint.Reply.empty 400))
+         in ({ id } : request)
+    let _ = provide
+  end[@@ocaml.doc "@inline"][@@merlin.hide ]
