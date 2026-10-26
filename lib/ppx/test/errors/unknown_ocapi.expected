@@ -1,0 +1,4 @@
+File "./unknown_ocapi.ml.in", line 1, characters 31-43:
+1 | type request = { id : string [@ocapi.querry] } [@@deriving provide]
+                                   ^^^^^^^^^^^^
+Error: ocapi: unknown attribute [@ocapi.querry]

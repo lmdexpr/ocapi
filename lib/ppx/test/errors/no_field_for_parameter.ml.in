@@ -1,0 +1,1 @@
+type request = { name : string } [@@deriving provide ~path:"/items/{id}"]

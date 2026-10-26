@@ -1,0 +1,1 @@
+type request = { id : string [@ocapi.querry] } [@@deriving provide]

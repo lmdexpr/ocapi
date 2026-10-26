@@ -1,0 +1,4 @@
+File "./no_codec.ml.in", line 1, characters 14-46:
+1 | type result = Found of item list [@status 200] [@@deriving responses]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: ocapi: no codec by convention for this type; give one with [@codec ...]

@@ -80,3 +80,30 @@
    (>= 0.0.7))
   yojson
   (alcotest :with-test)))
+
+(package
+ (name ocapi-ppx)
+ (synopsis "Derive ocapi endpoint declarations from types")
+ (description
+  "[@@deriving provide] reads a request record from an HTTP request, [@@deriving responses] sends\na result variant, [@@deriving ocapi] makes a codec of derived JSON functions; doc comments\nbecome descriptions. The output is ordinary ocapi combinators.")
+ (depends
+  (ocaml
+   (>= 5.3.0))
+  dune
+  (ocapi
+   (= :version))
+  (ppxlib
+   (>= 0.36.0))
+  (odoc-parser
+   (>= 3.0.0))
+  (ocapi-openapi
+   (and
+    :with-test
+    (= :version)))
+  (ocapi-jsonschema
+   (and
+    :with-test
+    (= :version)))
+  (ppx_deriving_jsonschema :with-test)
+  (ppx_yojson_conv :with-test)
+  (alcotest :with-test)))

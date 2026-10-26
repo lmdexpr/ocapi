@@ -1,0 +1,4 @@
+File "./misspelled_field.ml.in", line 1, characters 47-52:
+1 | type request = { id : string; trace : string [@heder "X-Trace"] } [@@deriving provide]
+                                                   ^^^^^
+Error: ocapi: unknown attribute [@heder]; did you mean [@header]?

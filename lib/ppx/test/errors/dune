@@ -1,0 +1,192 @@
+; What the derivers refuse, as the driver reports it: at compile time, not when the endpoint
+; is made. Colors are off, so the output does not depend on the terminal.
+
+(rule
+ (with-outputs-to
+  authorization.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:authorization.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff authorization.expected authorization.actual)))
+
+(rule
+ (with-outputs-to
+  no_codec.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:no_codec.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff no_codec.expected no_codec.actual)))
+
+(rule
+ (with-outputs-to
+  no_field_for_parameter.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:no_field_for_parameter.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff no_field_for_parameter.expected no_field_for_parameter.actual)))
+
+(rule
+ (with-outputs-to
+  no_status.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:no_status.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff no_status.expected no_status.actual)))
+
+(rule
+ (with-outputs-to
+  not_in_template.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:not_in_template.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff not_in_template.expected not_in_template.actual)))
+
+(rule
+ (with-outputs-to
+  optional_path.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:optional_path.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff optional_path.expected optional_path.actual)))
+
+(rule
+ (with-outputs-to
+  two_locations.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:two_locations.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff two_locations.expected two_locations.actual)))
+
+(rule
+ (with-outputs-to
+  misspelled_field.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:misspelled_field.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff misspelled_field.expected misspelled_field.actual)))
+
+(rule
+ (with-outputs-to
+  misspelled_constructor.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:misspelled_constructor.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff misspelled_constructor.expected misspelled_constructor.actual)))
+
+(rule
+ (with-outputs-to
+  misplaced.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:misplaced.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff misplaced.expected misplaced.actual)))
+
+(rule
+ (with-outputs-to
+  unknown_ocapi.actual
+  (with-accepted-exit-codes
+   1
+   (setenv
+    OCAML_COLOR
+    never
+    (run %{exe:../pp.exe} -impl %{dep:unknown_ocapi.ml.in})))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff unknown_ocapi.expected unknown_ocapi.actual)))
+
+(rule
+ (with-outputs-to
+  other_ppx.actual
+  (setenv
+   OCAML_COLOR
+   never
+   (run %{exe:../pp.exe} -impl %{dep:other_ppx.ml.in}))))
+
+(rule
+ (alias runtest)
+ (package ocapi-ppx)
+ (action
+  (diff other_ppx.expected other_ppx.actual)))

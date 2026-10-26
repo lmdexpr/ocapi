@@ -1,0 +1,1 @@
+type result = Found of item [@@deriving responses]

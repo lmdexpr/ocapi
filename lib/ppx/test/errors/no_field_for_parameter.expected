@@ -1,0 +1,4 @@
+File "./no_field_for_parameter.ml.in", line 1, characters 0-73:
+1 | type request = { name : string } [@@deriving provide ~path:"/items/{id}"]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: ocapi: no field provides {id} of /items/{id}

@@ -1,0 +1,4 @@
+File "./authorization.ml.in", line 1, characters 17-57:
+1 | type request = { token : string [@header "Authorization"] } [@@deriving provide]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error: ocapi: the header Authorization is not a parameter; declare it as security or media

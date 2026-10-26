@@ -1,0 +1,69 @@
+module Get =
+  struct
+    module Spec =
+      struct
+        type request =
+          {
+          id: string [@ocaml.doc " Item id "];
+          limit: int option
+            [@reject
+              Ocapi.Endpoint.Provide.require
+                (fun _ -> Ocapi.Endpoint.Reply.empty 422)];
+          item: item [@body ]}[@@ocaml.doc
+                                " One item\n\n        Returns the item with the given id. "]
+        [@@deriving provide ~path:"/items/{id}"]
+        include
+          struct
+            let _ = fun (_ : request) -> ()
+            type body = Ocapi.Endpoint.Provide.body_read
+            type doc = Ocapi.Endpoint.complete
+            let path = "/items/{id}"
+            let _ = path
+            let summary = Some "One item"
+            let _ = summary
+            let description = Some "Returns the item with the given id."
+            let _ = description
+            let operation_id = Some "get"
+            let _ = operation_id
+            let provide =
+              let open Ocapi.Endpoint.Syntax in
+                let+ id =
+                  Ocapi.Endpoint.Path.value ~description:"Item id"
+                    Ocapi.Endpoint.Value.string "id"
+                    (fun (r : request) -> r.id)
+                and+ limit =
+                  (Ocapi.Endpoint.Query.optional
+                     (Ocapi.Endpoint.Value.int ()) "limit"
+                     (fun (r : request) -> r.limit))
+                    |>
+                    (Ocapi.Endpoint.Provide.require
+                       (fun _ -> Ocapi.Endpoint.Reply.empty 422))
+                and+ item =
+                  (Ocapi.Endpoint.Body.json item_codec
+                     (fun (r : request) -> r.item))
+                    |>
+                    (Ocapi.Endpoint.Provide.require
+                       ~responses:[(400, "The body is malformed")]
+                       (fun _ -> Ocapi.Endpoint.Reply.empty 400)) in
+                ({ id; limit; item } : request)
+            let _ = provide
+          end[@@ocaml.doc "@inline"][@@merlin.hide ]
+        type result =
+          | Found of item [@status 200]
+          | Gone [@status 410][@@deriving responses]
+        include
+          struct
+            let _ = fun (_ : result) -> ()
+            let responses =
+              [Ocapi.Endpoint.Response.json ~status:200 item_codec
+                 (Ocapi.Endpoint.Prism.named "Found"
+                    (Ocapi.Endpoint.Prism.make ~inject:(fun x -> Found x)
+                       ~project:(function | Found x -> Some x | _ -> None)));
+              Ocapi.Endpoint.Response.empty ~status:410
+                (Ocapi.Endpoint.Prism.named "Gone"
+                   (Ocapi.Endpoint.Prism.make ~inject:(fun () -> Gone)
+                      ~project:(function | Gone -> Some () | _ -> None)))]
+            let _ = responses
+          end[@@ocaml.doc "@inline"][@@merlin.hide ]
+      end
+  end
