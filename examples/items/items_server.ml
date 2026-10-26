@@ -22,6 +22,8 @@ let routes store =
         (fun { id } ->
           Atomic.get store
           |> List.find_opt (fun (item : Items_api.item) -> item.id = id)
-          |> Option.to_result ~none:"not_found");
-      route (module Items_api.Create) (fun { name } -> add store name);
+          |> Option.fold
+               ~none:(Items_api.Get.Not_found { error = "not_found" })
+               ~some:(fun item -> Items_api.Get.Found item));
+      route (module Items_api.Create) (fun { item = { name } } -> Created (add store name));
     ]

@@ -4,7 +4,14 @@
 (library
  (name items_api)
  (modules items_api)
- (libraries ocapi yojson))
+ (preprocess
+  (pps ocapi-ppx ppx_deriving_jsonschema ppx_yojson_conv))
+ (libraries
+  ocapi
+  ocapi-jsonschema
+  ppx_deriving_jsonschema.runtime
+  ppx_yojson_conv_lib
+  yojson))
 
 (library
  (name items_server)
